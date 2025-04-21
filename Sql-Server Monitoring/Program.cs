@@ -1,0 +1,206 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Versioning;
+using Microsoft.OpenApi.Models;
+using Sql_Server_Monitoring.Application.BackgroundService;
+using Sql_Server_Monitoring.Application.Hub;
+using Sql_Server_Monitoring.Application.Services;
+using Sql_Server_Monitoring.Domain.Interfaces;
+using Sql_Server_Monitoring.Infrastructure.Data;
+using Sql_Server_Monitoring.Middleware;
+using System.Reflection;
+using System.Text.Json.Serialization;
+using Microsoft.Data.SqlClient;
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+
+        // Add services to the container
+        ConfigureServices(builder.Services, builder.Configuration);
+
+        var app = builder.Build();
+
+        // Configure the HTTP request pipeline
+        ConfigureApp(app, app.Environment);
+
+        app.Run();
+    }
+
+    private static void ConfigureServices(IServiceCollection services, IConfiguration configuration)
+    {
+        // Add controllers and JSON options
+        services.AddControllers()
+            .AddJsonOptions(options =>
+            {
+                options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+                options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+            });
+
+        // Add API versioning
+        services.AddApiVersioning(options =>
+        {
+            options.DefaultApiVersion = new ApiVersion(1, 0);
+            options.AssumeDefaultVersionWhenUnspecified = true;
+            options.ReportApiVersions = true;
+        });
+        services.AddVersionedApiExplorer(options =>
+        {
+            options.GroupNameFormat = "'v'VVV";
+            options.SubstituteApiVersionInUrl = true;
+        });
+
+        // Add Swagger
+        services.AddSwaggerGen(options =>
+        {
+            options.SwaggerDoc("v1", new OpenApiInfo
+            {
+                Title = "SQL Server Manager API",
+                Version = "v1",
+                Description = "API for managing and monitoring SQL Server databases",
+                Contact = new OpenApiContact
+                {
+                    Name = "Your Organization",
+                    Email = "contact@example.com",
+                    Url = new Uri("https://example.com")
+                },
+                License = new OpenApiLicense
+                {
+                    Name = "MIT License",
+                    Url = new Uri("https://opensource.org/licenses/MIT")
+                }
+            });
+
+            // Include XML comments
+            var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+            if (File.Exists(xmlPath))
+            {
+                options.IncludeXmlComments(xmlPath);
+            }
+
+            // Add JWT authentication support in Swagger UI
+            options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+            {
+                Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token in the text input below.",
+                Name = "Authorization",
+                In = ParameterLocation.Header,
+                Type = SecuritySchemeType.ApiKey,
+                Scheme = "Bearer"
+            });
+
+            options.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        Array.Empty<string>()
+                    }
+                });
+        });
+
+        // CORS
+        services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(builder =>
+            {
+                builder.WithOrigins(configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "https://localhost:5001" })
+                       .AllowAnyMethod()
+                       .AllowAnyHeader()
+                       .AllowCredentials();
+            });
+        });
+
+        // Health checks
+        services.AddHealthChecks();
+
+        // Authentication and Authorization
+        services.AddAuthentication("Bearer")
+            .AddJwtBearer(options =>
+            {
+                options.Authority = configuration["Auth:Authority"];
+                options.Audience = configuration["Auth:Audience"];
+                // In development environment, we don't require HTTPS metadata
+                options.RequireHttpsMetadata = !Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")?.Equals("Development", StringComparison.OrdinalIgnoreCase) ?? true;
+            });
+
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("AdminPolicy", policy =>
+                policy.RequireRole("admin"));
+
+            options.AddPolicy("UserPolicy", policy =>
+                policy.RequireRole("user", "admin"));
+        });
+
+        // Register repositories
+        services.AddSingleton<IDatabaseRepository, DatabaseRepository>();
+        services.AddSingleton<IIssueRepository, IssueRepository>();
+        services.AddSingleton<IOptimizationScriptRepository, OptimizationScriptRepository>();
+        services.AddSingleton<ISettingsRepository, SettingsRepository>();
+        services.AddSingleton<IStoredProcedureRepository, StoredProcedureRepository>();
+
+        // Register services
+        services.AddSingleton<IDatabaseAnalyzerService, DatabaseAnalyzerService>();
+        services.AddSingleton<IDatabaseMonitorService, DatabaseMonitorService>();
+        services.AddSingleton<IDatabaseOptimizerService, DatabaseOptimizerService>();
+        services.AddSingleton<IAlertService, AlertService>();
+        services.AddSingleton<IBackupService, BackupService>();
+        services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
+        services.AddSingleton<IQueryAnalyzerService, QueryAnalyzerService>();
+        services.AddSingleton<IStoredProcedureService, StoredProcedureService>();
+
+        // Add SignalR for real-time updates
+        services.AddSignalR();
+
+        // Add monitoring background service
+        services.AddHostedService<MonitoringBackgroundService>();
+    }
+
+    private static void ConfigureApp(WebApplication app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/error");
+            app.UseHsts();
+        }
+
+        // Enable Swagger
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "SQL Server Manager API v1");
+            options.RoutePrefix = string.Empty; // Set Swagger UI as the root page
+            options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+        });
+
+        // Global exception handling middleware
+        app.UseExceptionHandlingMiddleware();
+
+        // Configure middleware
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+        app.UseRouting();
+        app.UseCors();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        // Health checks
+        app.UseHealthChecks("/health");
+
+        // Map controllers and SignalR hubs
+        app.MapControllers();
+        app.MapHub<MonitoringHub>("/hubs/monitoring");
+    }
+}

@@ -1,0 +1,6 @@
+@Sql_Server_Monitoring_HostAddress = http://localhost:5035
+
+GET {{Sql_Server_Monitoring_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
