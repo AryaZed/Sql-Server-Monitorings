@@ -391,7 +391,7 @@ namespace Sql_Server_Monitoring.Application.Services
                 }
 
                 // Check database compatibility level
-                if (dbDetails.CompatibilityLevel < CompatibilityLevel.Sql2016)
+                if (dbDetails.CompatibilityLevel.HasValue && (int)dbDetails.CompatibilityLevel.Value < (int)CompatibilityLevel.Sql2016)
                 {
                     issues.Add(new DbIssue
                     {
@@ -1200,15 +1200,22 @@ CREATE INDEX [IX_{tableName}_Consolidated] ON [{schema}].[{tableName}] ({keyColu
                         c.name AS column_name,
                         TYPE_NAME(c.user_type_id) AS data_type,
                         CASE
-                            WHEN c.name LIKE '%credit%card%' OR c.name LIKE '%card%number%' THEN 'FinancialData'
-                            WHEN c.name LIKE '%ssn%' OR c.name LIKE '%social%security%' THEN 'PersonalIdentifier'
-                            WHEN c.name LIKE '%password%' OR c.name LIKE '%pwd%' THEN 'Credentials'
-                            WHEN c.name LIKE '%email%' OR c.name LIKE '%phone%' OR c.name LIKE '%address%' THEN 'PersonalIdentifier'
-                            WHEN c.name LIKE '%birth%date%' OR c.name LIKE '%dob%' THEN 'PersonalIdentifier'
-                            WHEN c.name LIKE '%passport%' OR c.name LIKE '%license%' THEN 'PersonalIdentifier'
-                            WHEN c.name LIKE '%account%number%' OR c.name LIKE '%routing%number%' THEN 'FinancialData'
-                            WHEN c.name LIKE '%salary%' OR c.name LIKE '%income%' THEN 'FinancialData'
+                            WHEN c.name LIKE '%credit%card%' OR c.name LIKE '%card%number%' THEN 'CreditCard'
+                            WHEN c.name LIKE '%ssn%' OR c.name LIKE '%social%security%' THEN 'SSN'
+                            WHEN c.name LIKE '%password%' OR c.name LIKE '%pwd%' THEN 'Password'
+                            WHEN c.name LIKE '%email%' THEN 'Email'
+                            WHEN c.name LIKE '%phone%' THEN 'PhoneNumber'
+                            WHEN c.name LIKE '%address%' THEN 'Address'
+                            WHEN c.name LIKE '%birth%date%' OR c.name LIKE '%dob%' THEN 'DateOfBirth'
+                            WHEN c.name LIKE '%passport%' THEN 'PassportNumber'
+                            WHEN c.name LIKE '%license%' THEN 'DriversLicense'
+                            WHEN c.name LIKE '%account%number%' OR c.name LIKE '%routing%number%' THEN 'FinancialInformation'
+                            WHEN c.name LIKE '%salary%' OR c.name LIKE '%income%' THEN 'FinancialInformation'
                             WHEN c.name LIKE '%health%' OR c.name LIKE '%medical%' THEN 'HealthInformation'
+                            WHEN c.name LIKE '%token%' OR c.name LIKE '%api%key%' THEN 'SecurityToken'
+                            WHEN c.name LIKE '%confidential%' OR c.name LIKE '%secret%' THEN 'BusinessConfidential'
+                            WHEN c.name LIKE '%classification%' THEN 'Classification'
+                            WHEN c.name LIKE '%id%card%' OR c.name LIKE '%national%id%' THEN 'PersonalIdentification'
                             ELSE 'Other'
                         END AS sensitivity_type,
                         CASE WHEN EXISTS (
@@ -1238,13 +1245,19 @@ CREATE INDEX [IX_{tableName}_Consolidated] ON [{schema}].[{tableName}] ({keyColu
 
                 while (await reader.ReadAsync())
                 {
+                    var tableName = reader.GetString(0);
+                    var parts = tableName.Split('.');
+                    
                     result.Add(new SensitiveColumn
                     {
-                        TableName = reader.GetString(0),
+                        SchemaName = parts[0],
+                        TableName = parts[1],
                         ColumnName = reader.GetString(1),
                         DataType = reader.GetString(2),
                         SensitivityType = Enum.Parse<SensitivityType>(reader.GetString(3)),
-                        IsEncrypted = reader.GetInt32(4) == 1
+                        IsEncrypted = reader.GetInt32(4) == 1,
+                        HasRowLevelSecurity = false,
+                        IsNullable = false // We don't have this information, setting default
                     });
                 }
             }

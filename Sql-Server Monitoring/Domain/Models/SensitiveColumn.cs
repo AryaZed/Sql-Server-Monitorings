@@ -1,4 +1,6 @@
-﻿namespace Sql_Server_Monitoring.Domain.Interfaces
+﻿using Sql_Server_Monitoring.Domain.Models;
+
+namespace Sql_Server_Monitoring.Domain.Models
 {
     public class SensitiveColumn
     {

@@ -11,6 +11,8 @@
         BackupFailure,
         IoBottleneck,
         ConfigurationIssue,
-        SecurityIssue
+        SecurityIssue,
+        DatabaseConnectivity,
+        SystemError
     }
 }

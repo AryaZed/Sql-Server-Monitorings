@@ -1,6 +1,12 @@
 ﻿using Microsoft.Data.SqlClient;
 using Sql_Server_Monitoring.Domain.Interfaces;
 using Sql_Server_Monitoring.Domain.Models;
+using System.Data;
+using Polly;
+using Polly.Retry;
+using SqlConnection = Microsoft.Data.SqlClient.SqlConnection;
+using SqlCommand = Microsoft.Data.SqlClient.SqlCommand;
+using SqlException = Microsoft.Data.SqlClient.SqlException;
 
 namespace Sql_Server_Monitoring.Application.Services
 {
@@ -13,6 +19,9 @@ namespace Sql_Server_Monitoring.Application.Services
         private readonly ILogger<DatabaseMonitorService> _logger;
         private Timer _monitoringTimer;
         private bool _isMonitoring;
+        private readonly AsyncRetryPolicy _retryPolicy;
+        private readonly SemaphoreSlim _monitoringLock = new SemaphoreSlim(1, 1);
+        private DateTime _lastSuccessfulRun = DateTime.MinValue;
 
         public DatabaseMonitorService(
             IDatabaseRepository databaseRepository,
@@ -26,6 +35,21 @@ namespace Sql_Server_Monitoring.Application.Services
             _issueRepository = issueRepository;
             _alertService = alertService;
             _logger = logger;
+            
+            // Configure retry policy
+            _retryPolicy = Policy
+                .Handle<SqlException>()
+                .Or<TimeoutException>()
+                .Or<InvalidOperationException>()
+                .WaitAndRetryAsync(
+                    3, // Number of retries
+                    retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)), // Exponential backoff
+                    (exception, timeSpan, retryCount, context) =>
+                    {
+                        _logger.LogWarning(exception, 
+                            "Error during database operation (Attempt {RetryCount}). Retrying after {RetryTimeSpan}s", 
+                            retryCount, timeSpan.TotalSeconds);
+                    });
         }
 
         public async Task StartMonitoringAsync(string connectionString, CancellationToken cancellationToken)
@@ -38,6 +62,12 @@ namespace Sql_Server_Monitoring.Application.Services
 
             try
             {
+                // Verify connectivity before starting monitoring
+                if (!await CheckDatabaseConnectivityAsync(connectionString))
+                {
+                    throw new InvalidOperationException("Cannot establish database connection. Monitoring not started.");
+                }
+
                 var settings = await _settingsRepository.GetMonitoringSettingsAsync();
                 int intervalSeconds = settings.MonitoringIntervalSeconds;
 
@@ -83,11 +113,12 @@ namespace Sql_Server_Monitoring.Application.Services
         {
             try
             {
-                return await _databaseRepository.GetServerPerformanceMetricsAsync(connectionString);
+                return await _retryPolicy.ExecuteAsync(async () => 
+                    await _databaseRepository.GetServerPerformanceMetricsAsync(connectionString));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting current server performance metrics.");
+                _logger.LogError(ex, "Error getting current server performance metrics after retries.");
                 throw;
             }
         }
@@ -183,52 +214,117 @@ namespace Sql_Server_Monitoring.Application.Services
 
         private async Task RunMonitoringCycleAsync(string connectionString)
         {
+            // Use semaphore to prevent overlapping monitoring cycles if previous one is still running
+            if (!await _monitoringLock.WaitAsync(0))
+            {
+                _logger.LogWarning("Previous monitoring cycle is still running. Skipping this cycle.");
+                return;
+            }
+
             try
             {
                 _logger.LogInformation("Running monitoring cycle...");
 
+                // Check connectivity before proceeding
+                if (!await CheckDatabaseConnectivityAsync(connectionString))
+                {
+                    _logger.LogError("Database connectivity check failed. Skipping monitoring cycle.");
+                    
+                    // Create connectivity issue
+                    var issue = new DbIssue
+                    {
+                        Type = IssueType.Connectivity,
+                        Severity = IssueSeverity.Critical,
+                        Message = "Database connectivity lost. Cannot perform monitoring.",
+                        RecommendedAction = "Check SQL Server instance, network connectivity, and credentials.",
+                        DetectionTime = DateTime.Now
+                    };
+                    
+                    await _issueRepository.AddIssueAsync(issue);
+                    await TriggerAlertIfEnabledAsync(connectionString, null, issue, AlertType.DatabaseConnectivity);
+                    
+                    return;
+                }
+
                 // Get settings to determine what to monitor
-                var settings = await _settingsRepository.GetMonitoringSettingsAsync();
+                var settings = await _retryPolicy.ExecuteAsync(async () => 
+                    await _settingsRepository.GetMonitoringSettingsAsync());
 
                 // Get server performance metrics
-                var metrics = await GetCurrentMetricsAsync(connectionString);
+                var metrics = await _retryPolicy.ExecuteAsync(async () => 
+                    await GetCurrentMetricsAsync(connectionString));
 
                 // Store metrics for historical analysis
-                await StoreMetricsAsync(connectionString, metrics);
+                await _retryPolicy.ExecuteAsync(async () => 
+                    await StoreMetricsAsync(connectionString, metrics));
 
                 // Check for performance issues
-                await DetectPerformanceIssuesAsync(connectionString);
-
-                // Analyze each user database
-                var databases = await _databaseRepository.GetUserDatabasesAsync(connectionString);
-                foreach (var dbName in databases)
-                {
-                    // Skip system databases
-                    if (dbName == "master" || dbName == "model" || dbName == "msdb" || dbName == "tempdb")
-                        continue;
-
-                    try
-                    {
-                        // Monitor database-specific metrics
-                        await MonitorDatabaseAsync(connectionString, dbName, settings);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, $"Error monitoring database '{dbName}'");
-                    }
-                }
-
-                // Purge old metrics if required
-                if (settings.RetentionDays > 0)
-                {
-                    await _databaseRepository.PurgeOldMetricsAsync(connectionString, settings.RetentionDays);
-                }
-
-                _logger.LogInformation("Monitoring cycle completed.");
+                await _retryPolicy.ExecuteAsync(async () => 
+                    await DetectPerformanceIssuesAsync(connectionString));
+                
+                _lastSuccessfulRun = DateTime.Now;
+                _logger.LogInformation("Monitoring cycle completed successfully.");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error during monitoring cycle.");
+                _logger.LogError(ex, "Error in monitoring cycle. Will retry on next scheduled interval.");
+                
+                // Only create an issue if we've had multiple consecutive failures
+                if (DateTime.Now - _lastSuccessfulRun > TimeSpan.FromMinutes(10))
+                {
+                    var issue = new DbIssue
+                    {
+                        Type = IssueType.System,
+                        Severity = IssueSeverity.High,
+                        Message = $"Monitoring service experiencing errors: {ex.Message}",
+                        RecommendedAction = "Check application logs for details.",
+                        DetectionTime = DateTime.Now
+                    };
+                    
+                    try
+                    {
+                        await _issueRepository.AddIssueAsync(issue);
+                        await TriggerAlertIfEnabledAsync(connectionString, null, issue, AlertType.SystemError);
+                    }
+                    catch (Exception innerEx)
+                    {
+                        _logger.LogError(innerEx, "Failed to record monitoring issue");
+                    }
+                }
+            }
+            finally
+            {
+                _monitoringLock.Release();
+            }
+        }
+        
+        /// <summary>
+        /// Checks if the database connection is available
+        /// </summary>
+        /// <param name="connectionString">SQL Server connection string</param>
+        /// <returns>True if connection can be established, otherwise false</returns>
+        public async Task<bool> CheckDatabaseConnectivityAsync(string connectionString)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(connectionString))
+                {
+                    await connection.OpenAsync();
+                    
+                    // Execute a simple query to verify full connectivity
+                    using (var command = new SqlCommand("SELECT @@VERSION", connection))
+                    {
+                        command.CommandTimeout = 5; // Short timeout for quick check
+                        await command.ExecuteScalarAsync();
+                    }
+                    
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Database connectivity check failed");
+                return false;
             }
         }
 
@@ -365,7 +461,7 @@ namespace Sql_Server_Monitoring.Application.Services
                 using var connection = new SqlConnection(connectionString);
                 await connection.OpenAsync();
 
-                using var command = new SqlCommand(query, connection);
+                using var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection);
                 using var reader = await command.ExecuteReaderAsync();
 
                 while (await reader.ReadAsync())

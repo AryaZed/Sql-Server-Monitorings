@@ -8,6 +8,12 @@ namespace Sql_Server_Monitoring.Domain.Models
     /// </summary>
     public class Database
     {
+        public Database()
+        {
+            Files = new List<DatabaseFile>();
+            Tables = new List<Table>();
+        }
+
         /// <summary>
         /// Unique identifier for the database
         /// </summary>
@@ -36,6 +42,11 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// Creation date of the database
         /// </summary>
         public DateTime CreationDate { get; set; }
+        
+        /// <summary>
+        /// Creation date returned from SQL Server
+        /// </summary>
+        public DateTime CreatedDate { get; set; }
 
         /// <summary>
         /// Last backup date
@@ -45,8 +56,12 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// <summary>
         /// Recovery model (Simple, Full, Bulk-logged)
         /// </summary>
-        [StringLength(50)]
-        public string RecoveryModel { get; set; }
+        public RecoveryModel RecoveryModel { get; set; }
+        
+        /// <summary>
+        /// Indicates if the database is encrypted
+        /// </summary>
+        public bool IsEncrypted { get; set; }
 
         /// <summary>
         /// Compatibility level of the database
@@ -96,5 +111,15 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// </summary>
         [StringLength(1000)]
         public string Notes { get; set; }
+
+        /// <summary>
+        /// Collection of database files
+        /// </summary>
+        public List<DatabaseFile> Files { get; set; }
+        
+        /// <summary>
+        /// Collection of database tables
+        /// </summary>
+        public List<Table> Tables { get; set; }
     }
 }

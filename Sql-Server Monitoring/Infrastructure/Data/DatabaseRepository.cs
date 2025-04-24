@@ -57,7 +57,7 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
                 if (await reader.ReadAsync())
                 {
                     database.CreatedDate = reader.GetDateTime(0);
-                    database.CompatibilityLevel = (CompatibilityLevel)reader.GetInt32(1);
+                    database.CompatibilityLevel = (int)reader.GetInt32(1);
                     database.RecoveryModel = Enum.Parse<RecoveryModel>(reader.GetString(2), true);
                     database.IsEncrypted = reader.GetBoolean(3);
                     database.SizeInMB = reader.GetInt64(4);

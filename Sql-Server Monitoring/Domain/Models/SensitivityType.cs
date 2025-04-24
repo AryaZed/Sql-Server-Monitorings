@@ -1,8 +1,17 @@
 ﻿namespace Sql_Server_Monitoring.Domain.Models
 {
+    /// <summary>
+    /// Type of data sensitivity for database columns
+    /// </summary>
     public enum SensitivityType
     {
-        Other,
+        None,
+        PersonalIdentification,
+        FinancialInformation,
+        HealthInformation,
+        Credentials,
+        Classification,
+        BusinessConfidential,
         Password,
         SSN,
         CreditCard,
@@ -12,6 +21,7 @@
         DateOfBirth,
         PassportNumber,
         DriversLicense,
-        SecurityToken
+        SecurityToken,
+        Other
     }
 }

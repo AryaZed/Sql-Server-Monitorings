@@ -9,6 +9,8 @@
         Security,
         Backup,
         Integrity,
-        Capacity
+        Capacity,
+        Connectivity,
+        System
     }
 }

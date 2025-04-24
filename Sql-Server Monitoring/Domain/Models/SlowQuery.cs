@@ -13,6 +13,6 @@
         public double AvgPhysicalReads { get; set; }
         public double AvgWrites { get; set; }
         public DateTime LastExecutionTime { get; set; }
-        public string QueryPlan { get; set; }
+        public string? QueryPlan { get; internal set; }
     }
 }

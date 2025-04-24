@@ -32,6 +32,35 @@ namespace Sql_Server_Monitoring.Controllers
         }
 
         /// <summary>
+        /// Checks database connectivity.
+        /// </summary>
+        /// <param name="connectionString">The connection string to the SQL Server.</param>
+        /// <returns>True if the database is reachable, otherwise false.</returns>
+        [HttpGet("check-connectivity")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<object>> CheckConnectivity([FromQuery] string connectionString)
+        {
+            try
+            {
+                bool isConnected = await _monitorService.CheckDatabaseConnectivityAsync(connectionString);
+                var serverName = isConnected ? ExtractServerName(connectionString) : "Unknown";
+                
+                return Ok(new { 
+                    isConnected,
+                    serverName,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking database connectivity");
+                return StatusCode(500, new { message = "Error checking database connectivity", error = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Gets the current monitoring settings.
         /// </summary>
         /// <returns>The current monitoring settings.</returns>

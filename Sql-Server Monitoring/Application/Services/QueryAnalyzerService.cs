@@ -1,8 +1,13 @@
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Sql_Server_Monitoring.Domain.Interfaces;
 using Sql_Server_Monitoring.Domain.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace Sql_Server_Monitoring.Application.Services
 {
@@ -138,97 +143,25 @@ namespace Sql_Server_Monitoring.Application.Services
 
         public async Task<IEnumerable<QueryStatistic>> GetQueryStatisticsAsync(string connectionString, string databaseName, int queryId)
         {
-            var statistics = new List<QueryStatistic>();
+            using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
 
             try
             {
-                _logger.LogInformation($"Getting statistics for query ID {queryId} in database '{databaseName}'");
-
-                using var connection = new SqlConnection(connectionString);
-                await connection.OpenAsync();
-
-                // Use Query Store if available (SQL Server 2016+)
-                bool hasQueryStore = await HasQueryStoreEnabled(connection, databaseName);
+                var hasQueryStore = await HasQueryStoreEnabled(connection, databaseName);
                 if (hasQueryStore)
                 {
-                    // Query statistics from Query Store
-                    var query = $@"
-                        USE [{databaseName}];
-                        SELECT 
-                            rs.avg_duration / 1000.0 AS avg_duration_ms,
-                            rs.avg_cpu_time / 1000.0 AS avg_cpu_time_ms,
-                            rs.avg_logical_io_reads AS avg_logical_reads,
-                            rs.avg_logical_io_writes AS avg_logical_writes,
-                            rs.avg_physical_io_reads AS avg_physical_reads,
-                            rs.avg_rowcount AS avg_row_count,
-                            rs.count_executions AS execution_count,
-                            CONVERT(VARCHAR, rs.last_execution_time, 120) AS last_execution_time
-                        FROM sys.query_store_query AS q
-                        JOIN sys.query_store_plan AS p ON q.query_id = p.query_id
-                        JOIN sys.query_store_runtime_stats AS rs ON p.plan_id = rs.plan_id
-                        WHERE q.query_id = @QueryId
-                        ORDER BY rs.last_execution_time DESC";
-
-                    using var command = new SqlCommand(query, connection);
-                    command.Parameters.AddWithValue("@QueryId", queryId);
-
-                    using var reader = await command.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
-                    {
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average Duration (ms)",
-                            Value = reader.GetDouble(0).ToString("N2")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average CPU Time (ms)",
-                            Value = reader.GetDouble(1).ToString("N2")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average Logical Reads",
-                            Value = reader.GetDouble(2).ToString("N0")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average Logical Writes",
-                            Value = reader.GetDouble(3).ToString("N0")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average Physical Reads",
-                            Value = reader.GetDouble(4).ToString("N0")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Average Row Count",
-                            Value = reader.GetDouble(5).ToString("N0")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Execution Count",
-                            Value = reader.GetInt64(6).ToString("N0")
-                        });
-                        statistics.Add(new QueryStatistic
-                        {
-                            Name = "Last Execution Time",
-                            Value = reader.GetString(7)
-                        });
-                    }
+                    return await GetQueryStatisticsFromQueryStoreAsync(connection, databaseName, queryId);
                 }
                 else
                 {
-                    // Fallback to DMVs for older SQL Server versions
-                    statistics = await GetQueryStatisticsFromDmv(connection, databaseName, queryId);
+                    _logger.LogInformation($"Query Store not enabled for database '{databaseName}'. Using DMVs for statistics.");
+                    return await GetQueryStatisticsFromDmvAsync(connection, databaseName, queryId);
                 }
-
-                _logger.LogInformation($"Retrieved {statistics.Count} statistics for query ID {queryId}");
-                return statistics;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error getting statistics for query ID {queryId} in database '{databaseName}'");
+                _logger.LogError(ex, $"Error getting query statistics for query ID {queryId} in database '{databaseName}'");
                 throw;
             }
         }
@@ -502,12 +435,171 @@ namespace Sql_Server_Monitoring.Application.Services
             return string.Empty;
         }
 
-        private async Task<List<QueryStatistic>> GetQueryStatisticsFromDmv(SqlConnection connection, string databaseName, int queryId)
+        private async Task<IEnumerable<QueryStatistic>> GetQueryStatisticsFromDmvAsync(SqlConnection connection, string databaseName, int queryId)
         {
-            // In this simplified version, we're returning an empty list
-            // as DMVs don't store query_id in the same way as Query Store
-            _logger.LogWarning("Query ID lookup from DMVs is not supported in this version");
-            return new List<QueryStatistic>();
+            var statistics = new List<QueryStatistic>();
+            
+            try
+            {
+                var query = $@"
+                    USE [{databaseName}];
+                    SELECT TOP 1
+                        CAST(qt.text AS NVARCHAR(MAX)) AS query_text,
+                        qs.execution_count,
+                        qs.total_worker_time / 1000.0 / qs.execution_count AS avg_cpu_time_ms,
+                        qs.total_logical_reads * 1.0 / qs.execution_count AS avg_logical_reads,
+                        qs.total_logical_writes * 1.0 / qs.execution_count AS avg_logical_writes,
+                        qs.total_elapsed_time / 1000.0 / qs.execution_count AS avg_elapsed_time_ms,
+                        qs.total_rows * 1.0 / qs.execution_count AS avg_row_count,
+                        qs.total_worker_time / 1000.0 AS total_cpu_time_ms,
+                        qs.total_logical_reads AS total_logical_reads,
+                        qs.total_logical_writes AS total_logical_writes,
+                        qs.total_elapsed_time / 1000.0 AS total_elapsed_time_ms,
+                        qs.total_rows AS total_rows,
+                        qs.max_worker_time / 1000.0 AS max_cpu_time_ms,
+                        qs.max_logical_reads AS max_logical_reads,
+                        qs.max_logical_writes AS max_logical_writes,
+                        qs.max_elapsed_time / 1000.0 AS max_elapsed_time_ms,
+                        qs.max_rows AS max_row_count,
+                        qs.last_execution_time,
+                        DB_NAME() AS database_name,
+                        CAST(qs.plan_handle AS NVARCHAR(MAX)) AS plan_handle,
+                        CAST(qs.query_hash AS NVARCHAR(MAX)) AS query_hash,
+                        CAST(qs.query_plan_hash AS NVARCHAR(MAX)) AS query_plan_hash,
+                        CAST(qs.sql_handle AS NVARCHAR(MAX)) AS sql_handle
+                    FROM sys.dm_exec_query_stats qs
+                    CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) as qt
+                    CROSS APPLY sys.dm_exec_query_plan(qs.plan_handle) as qp
+                    WHERE qt.text LIKE '%' + CAST(@QueryId AS NVARCHAR(10)) + '%'
+                    ORDER BY qs.last_execution_time DESC";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@QueryId", queryId);
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var statistic = new QueryStatistic
+                    {
+                        QueryText = reader.GetString(0),
+                        ExecutionCount = reader.GetInt32(1),
+                        AvgCpuTimeMs = reader.GetDouble(2),
+                        AvgLogicalReads = reader.GetDouble(3),
+                        AvgLogicalWrites = reader.GetDouble(4),
+                        AvgElapsedTimeMs = reader.GetDouble(5),
+                        AvgRowCount = reader.GetDouble(6),
+                        TotalCpuTimeMs = reader.GetInt32(7),
+                        TotalLogicalReads = reader.GetInt32(8),
+                        TotalLogicalWrites = reader.GetInt32(9),
+                        TotalElapsedTimeMs = reader.GetInt32(10),
+                        TotalRowCount = reader.GetInt32(11),
+                        MaxCpuTimeMs = reader.GetInt32(12),
+                        MaxLogicalReads = reader.GetInt32(13),
+                        MaxLogicalWrites = reader.GetInt32(14),
+                        MaxElapsedTimeMs = reader.GetInt32(15),
+                        MaxRowCount = reader.GetInt32(16),
+                        LastExecutionTime = reader.GetDateTime(17),
+                        DatabaseName = reader.GetString(18),
+                        PlanHandle = reader.GetString(19),
+                        QueryHash = reader.GetString(20),
+                        QueryPlanHash = reader.GetString(21),
+                        SqlHandle = reader.GetString(22)
+                    };
+
+                    statistics.Add(statistic);
+                }
+
+                return statistics;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting statistics from DMV for query ID {queryId} in database '{databaseName}'");
+                throw;
+            }
+        }
+
+        private async Task<IEnumerable<QueryStatistic>> GetQueryStatisticsFromQueryStoreAsync(SqlConnection connection, string databaseName, int queryId)
+        {
+            var statistics = new List<QueryStatistic>();
+            try
+            {
+                var query = $@"
+                    USE [{databaseName}];
+                    SELECT 
+                        qt.query_sql_text AS query_text,
+                        rs.count_executions AS execution_count,
+                        rs.avg_cpu_time / 1000.0 AS avg_cpu_time_ms,
+                        rs.avg_logical_io_reads AS avg_logical_reads,
+                        rs.avg_logical_io_writes AS avg_logical_writes,
+                        rs.avg_duration / 1000.0 AS avg_duration_ms,
+                        rs.avg_rowcount AS avg_row_count,
+                        rs.total_cpu_time / 1000.0 AS total_cpu_time_ms,
+                        rs.total_logical_io_reads AS total_logical_reads,
+                        rs.total_logical_io_writes AS total_logical_writes,
+                        rs.total_duration / 1000.0 AS total_duration_ms,
+                        rs.total_rowcount AS total_row_count,
+                        rs.max_cpu_time / 1000.0 AS max_cpu_time_ms,
+                        rs.max_logical_io_reads AS max_logical_reads,
+                        rs.max_logical_io_writes AS max_logical_writes,
+                        rs.max_duration / 1000.0 AS max_duration_ms,
+                        rs.max_rowcount AS max_row_count,
+                        rs.last_execution_time,
+                        DB_NAME() AS database_name,
+                        CAST(p.plan_handle AS NVARCHAR(MAX)) AS plan_handle,
+                        CAST(q.query_hash AS NVARCHAR(MAX)) AS query_hash,
+                        CAST(p.query_plan_hash AS NVARCHAR(MAX)) AS query_plan_hash,
+                        CAST(q.query_id AS NVARCHAR(36)) AS sql_handle
+                    FROM sys.query_store_query AS q
+                    JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
+                    JOIN sys.query_store_plan AS p ON q.query_id = p.query_id
+                    JOIN sys.query_store_runtime_stats AS rs ON p.plan_id = rs.plan_id
+                    WHERE q.query_id = @QueryId
+                    ORDER BY rs.last_execution_time DESC";
+
+                using var command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@QueryId", queryId);
+
+                using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var statistic = new QueryStatistic
+                    {
+                        QueryText = reader.GetString(0),
+                        ExecutionCount = reader.GetInt32(1),
+                        AvgCpuTimeMs = reader.GetDouble(2),
+                        AvgLogicalReads = reader.GetDouble(3),
+                        AvgLogicalWrites = reader.GetDouble(4),
+                        AvgElapsedTimeMs = reader.GetDouble(5),
+                        AvgRowCount = reader.GetDouble(6),
+                        TotalCpuTimeMs = reader.GetInt32(7),
+                        TotalLogicalReads = reader.GetInt32(8),
+                        TotalLogicalWrites = reader.GetInt32(9),
+                        TotalElapsedTimeMs = reader.GetInt32(10),
+                        TotalRowCount = reader.GetInt32(11),
+                        MaxCpuTimeMs = reader.GetInt32(12),
+                        MaxLogicalReads = reader.GetInt32(13),
+                        MaxLogicalWrites = reader.GetInt32(14),
+                        MaxElapsedTimeMs = reader.GetInt32(15),
+                        MaxRowCount = reader.GetInt32(16),
+                        LastExecutionTime = reader.GetDateTime(17),
+                        DatabaseName = reader.GetString(18),
+                        PlanHandle = reader.GetString(19),
+                        QueryHash = reader.GetString(20),
+                        QueryPlanHash = reader.GetString(21),
+                        SqlHandle = reader.GetString(22)
+                    };
+
+                    statistics.Add(statistic);
+                }
+
+                _logger.LogInformation($"Retrieved {statistics.Count} statistics from Query Store for query ID {queryId} in database '{databaseName}'");
+                return statistics;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting statistics from Query Store for query ID {queryId} in database '{databaseName}'");
+                throw;
+            }
         }
 
         private IEnumerable<QueryPlanIssue> IdentifyPlanIssues(string planXml)

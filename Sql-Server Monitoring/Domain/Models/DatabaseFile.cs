@@ -45,12 +45,12 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// <summary>
         /// Size of the file in MB
         /// </summary>
-        public double SizeInMB { get; set; }
+        public long SizeInMB { get; set; }
 
         /// <summary>
         /// Maximum size of the file in MB (null if unlimited)
         /// </summary>
-        public double MaxSizeInMB { get; set; }
+        public long MaxSizeInMB { get; set; }
 
         /// <summary>
         /// Growth increment in MB or percentage
@@ -61,6 +61,11 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// Whether file is set to auto-grow
         /// </summary>
         public bool IsAutoGrowthEnabled { get; set; }
+
+        /// <summary>
+        /// Whether this is a log file
+        /// </summary>
+        public bool IsLogFile { get; set; }
 
         /// <summary>
         /// ID of the database this file belongs to
@@ -86,22 +91,22 @@ namespace Sql_Server_Monitoring.Domain.Models
         /// <summary>
         /// Used space in MB
         /// </summary>
-        public double UsedSpaceInMB { get; set; }
+        public long UsedSpaceInMB { get; set; }
 
         /// <summary>
         /// Free space in MB
         /// </summary>
-        public double FreeSpaceInMB => SizeInMB - UsedSpaceInMB;
+        public long FreeSpaceInMB => SizeInMB - UsedSpaceInMB;
+
+        /// <summary>
+        /// Used space percentage
+        /// </summary>
+        public int PercentUsed { get; set; }
 
         /// <summary>
         /// Free space percentage
         /// </summary>
-        public double PercentUsed => Math.Round((UsedSpaceInMB / SizeInMB) * 100, 2);
-
-        /// <summary>
-        /// Free space percentage
-        /// </summary>
-        public double PercentFree => Math.Round(100 - PercentUsed, 2);
+        public double PercentFree => 100 - PercentUsed;
 
         /// <summary>
         /// Whether the file is read-only

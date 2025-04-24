@@ -185,7 +185,7 @@ namespace Sql_Server_Monitoring.Application.Services
                 var backupHistory = await GetBackupHistoryAsync(connectionString, databaseName);
                 var fullBackups = backupHistory.Where(b => b.BackupType == BackupType.Full).ToList();
                 var diffBackups = backupHistory.Where(b => b.BackupType == BackupType.Differential).ToList();
-                var logBackups = backupHistory.Where(b => b.BackupType == BackupType.Log).ToList();
+                var logBackups = backupHistory.Where(b => b.BackupType == BackupType.TransactionLog).ToList();
 
                 // Check if there are any backups at all
                 if (!fullBackups.Any())
@@ -269,7 +269,7 @@ namespace Sql_Server_Monitoring.Application.Services
             {
                 "D" => BackupType.Full,
                 "I" => BackupType.Differential,
-                "L" => BackupType.Log,
+                "L" => BackupType.TransactionLog,
                 _ => BackupType.Full
             };
         }
@@ -280,7 +280,7 @@ namespace Sql_Server_Monitoring.Application.Services
             {
                 BackupType.Full => "DATABASE",
                 BackupType.Differential => "DATABASE",
-                BackupType.Log => "LOG",
+                BackupType.TransactionLog => "LOG",
                 _ => "DATABASE"
             };
         }

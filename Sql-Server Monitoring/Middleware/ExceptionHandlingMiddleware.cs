@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.Data.SqlClient;
 
 namespace Sql_Server_Monitoring.Middleware
 {

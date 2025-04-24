@@ -10,6 +10,8 @@ using Sql_Server_Monitoring.Middleware;
 using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.SpaServices.Extensions;
+using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
 
 public class Program
 {
@@ -157,11 +159,26 @@ public class Program
         services.AddSingleton<IQueryAnalyzerService, QueryAnalyzerService>();
         services.AddSingleton<IStoredProcedureService, StoredProcedureService>();
 
+        // Add HTTP client for external API calls
+        services.AddHttpClient();
+
         // Add SignalR for real-time updates
         services.AddSignalR();
 
         // Add monitoring background service
         services.AddHostedService<MonitoringBackgroundService>();
+        
+        // Add caching
+        services.AddMemoryCache();
+
+        // Health checks
+        services.AddHealthChecks();
+
+        // Add SPA static files support
+        services.AddSpaStaticFiles(configuration =>
+        {
+            configuration.RootPath = "ClientApp/build";
+        });
     }
 
     private static void ConfigureApp(WebApplication app, IWebHostEnvironment env)
@@ -181,8 +198,7 @@ public class Program
         app.UseSwaggerUI(options =>
         {
             options.SwaggerEndpoint("/swagger/v1/swagger.json", "SQL Server Manager API v1");
-            options.RoutePrefix = string.Empty; // Set Swagger UI as the root page
-            options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.None);
+            options.RoutePrefix = "swagger";
         });
 
         // Global exception handling middleware
@@ -191,6 +207,11 @@ public class Program
         // Configure middleware
         app.UseHttpsRedirection();
         app.UseStaticFiles();
+        if (!env.IsDevelopment())
+        {
+            app.UseSpaStaticFiles();
+        }
+        
         app.UseRouting();
         app.UseCors();
         app.UseAuthentication();
@@ -202,5 +223,17 @@ public class Program
         // Map controllers and SignalR hubs
         app.MapControllers();
         app.MapHub<MonitoringHub>("/hubs/monitoring");
+
+        // Configure SPA
+        app.UseSpa(spa =>
+        {
+            spa.Options.SourcePath = "ClientApp";
+
+            if (env.IsDevelopment())
+            {
+                // In development, proxy requests to the React dev server
+                spa.UseProxyToSpaDevelopmentServer("http://localhost:3000");
+            }
+        });
     }
 }

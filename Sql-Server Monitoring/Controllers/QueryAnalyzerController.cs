@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Sql_Server_Monitoring.Domain.Interfaces;
+using Sql_Server_Monitoring.Domain.Models;
 
 namespace Sql_Server_Monitoring.Controllers
 {
