@@ -2,15 +2,25 @@
 {
     public enum IssueType
     {
-        Schema,
         Performance,
+        Schema,
         Index,
         Configuration,
         Security,
         Backup,
-        Integrity,
         Capacity,
         Connectivity,
-        System
+        Corruption,
+        AgentJob,
+        AvailabilityGroup,
+        LogShipping,
+        Mirroring,
+        IdentityColumn,
+        TempDB,
+        ResourceGovernor,
+        QueryStore,
+        SchemaChange,
+        DDLTracking,
+        DriverIssue
     }
 }

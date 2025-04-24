@@ -7,13 +7,16 @@ namespace Sql_Server_Monitoring.Application.Services
     {
         private readonly ISettingsRepository _settingsRepository;
         private readonly ILogger<AlertService> _logger;
+        private readonly IAlertRepository _alertRepository;
 
         public AlertService(
             ISettingsRepository settingsRepository,
-            ILogger<AlertService> logger)
+            ILogger<AlertService> logger,
+            IAlertRepository alertRepository)
         {
             _settingsRepository = settingsRepository;
             _logger = logger;
+            _alertRepository = alertRepository;
         }
 
         public async Task ConfigureAlertAsync(AlertSetting alertSetting)
@@ -94,6 +97,47 @@ namespace Sql_Server_Monitoring.Application.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting alert settings");
+                throw;
+            }
+        }
+
+        public async Task<AlertNotification> CreateAlertAsync(
+            string connectionString,
+            string databaseName,
+            AlertType alertType,
+            string message,
+            string recommendedAction,
+            IssueSeverity severity)
+        {
+            try
+            {
+                var alertNotification = new AlertNotification
+                {
+                    Type = alertType,
+                    Message = message,
+                    RecommendedAction = recommendedAction,
+                    Severity = severity,
+                    Timestamp = DateTime.Now,
+                    DatabaseName = databaseName
+                };
+
+                // Store in repository
+                await _alertRepository.AddAlertAsync(alertNotification);
+
+                // Send notifications based on settings
+                var notificationSettings = await _settingsRepository.GetAlertSettingsAsync();
+                var shouldNotify = notificationSettings.Any(s => s.AlertType == alertType && s.Enabled);
+
+                if (shouldNotify)
+                {
+                    await SendNotificationsAsync(alertNotification);
+                }
+
+                return alertNotification;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error creating alert for {alertType} on database {databaseName}");
                 throw;
             }
         }

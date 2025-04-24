@@ -28,6 +28,18 @@ import {
   Help as HelpIcon,
   AccountCircle as AccountCircleIcon,
   Logout as LogoutIcon,
+  MonitorHeartOutlined as MonitoringIcon,
+  Speed as SpeedIcon,
+  Database as DatabaseIcon,
+  Code as CodeIcon,
+  Warning as WarningIcon,
+  Backup as BackupIcon,
+  Work as AgentJobsIcon,
+  VerifiedUser as DbccCheckIcon,
+  Key as IdentityColumnIcon,
+  Hub as AvailabilityGroupIcon,
+  Compare as LogShippingIcon,
+  Sync as MirroringIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 240;
@@ -51,8 +63,21 @@ function Navigation() {
   
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
+    { text: 'Monitoring', icon: <MonitoringIcon />, path: '/monitoring' },
     { text: 'Servers', icon: <StorageIcon />, path: '/servers' },
-    { text: 'Performance', icon: <EqualizerIcon />, path: '/performance' },
+    { text: 'Databases', icon: <DatabaseIcon />, path: '/databases' },
+    { text: 'Performance', icon: <SpeedIcon />, path: '/performance' },
+    { text: 'Queries', icon: <CodeIcon />, path: '/queries' },
+    { text: 'Issues', icon: <WarningIcon />, path: '/issues' },
+    { text: 'Backups', icon: <BackupIcon />, path: '/backups' },
+    { divider: true },
+    { text: 'Agent Jobs', icon: <AgentJobsIcon />, path: '/agent-jobs' },
+    { text: 'DBCC Checks', icon: <DbccCheckIcon />, path: '/dbcc-checks' },
+    { text: 'Identity Columns', icon: <IdentityColumnIcon />, path: '/identity-columns' },
+    { text: 'Availability Groups', icon: <AvailabilityGroupIcon />, path: '/availability-groups' },
+    { text: 'Log Shipping', icon: <LogShippingIcon />, path: '/log-shipping' },
+    { text: 'Mirroring', icon: <MirroringIcon />, path: '/mirroring' },
+    { divider: true },
     { text: 'Alerts', icon: <NotificationsIcon />, path: '/alerts' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
     { text: 'User Management', icon: <PeopleIcon />, path: '/users' },
@@ -163,43 +188,47 @@ function Navigation() {
         <Toolbar />
         <Box sx={{ overflow: 'auto', mt: 2 }}>
           <List>
-            {menuItems.map((item) => (
-              <ListItem
-                button
-                key={item.text}
-                component={Link}
-                to={item.path}
-                selected={location.pathname === item.path}
-                sx={{
-                  minHeight: 48,
-                  justifyContent: open ? 'initial' : 'center',
-                  px: 2.5,
-                  '&.Mui-selected': {
-                    backgroundColor: 'primary.light',
-                    '&:hover': {
-                      backgroundColor: 'primary.light',
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon
+            {menuItems.map((item, index) => (
+              item.divider ? (
+                <Divider key={`divider-${index}`} sx={{ my: 1 }} />
+              ) : (
+                <ListItem
+                  button
+                  key={item.text}
+                  component={Link}
+                  to={item.path}
+                  selected={location.pathname === item.path}
                   sx={{
-                    minWidth: 0,
-                    mr: open ? 3 : 'auto',
-                    justifyContent: 'center',
-                    color: location.pathname === item.path ? 'primary.main' : 'inherit',
+                    minHeight: 48,
+                    justifyContent: open ? 'initial' : 'center',
+                    px: 2.5,
+                    '&.Mui-selected': {
+                      backgroundColor: 'primary.light',
+                      '&:hover': {
+                        backgroundColor: 'primary.light',
+                      },
+                    },
                   }}
                 >
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText
-                  primary={item.text}
-                  sx={{
-                    opacity: open ? 1 : 0,
-                    color: location.pathname === item.path ? 'primary.main' : 'inherit',
-                  }}
-                />
-              </ListItem>
+                  <ListItemIcon
+                    sx={{
+                      minWidth: 0,
+                      mr: open ? 3 : 'auto',
+                      justifyContent: 'center',
+                      color: location.pathname === item.path ? 'primary.main' : 'inherit',
+                    }}
+                  >
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    sx={{
+                      opacity: open ? 1 : 0,
+                      color: location.pathname === item.path ? 'primary.main' : 'inherit',
+                    }}
+                  />
+                </ListItem>
+              )
             ))}
           </List>
         </Box>

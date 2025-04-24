@@ -150,14 +150,17 @@ public class Program
         services.AddSingleton<IStoredProcedureRepository, StoredProcedureRepository>();
 
         // Register services
-        services.AddSingleton<IDatabaseAnalyzerService, DatabaseAnalyzerService>();
-        services.AddSingleton<IDatabaseMonitorService, DatabaseMonitorService>();
-        services.AddSingleton<IDatabaseOptimizerService, DatabaseOptimizerService>();
-        services.AddSingleton<IAlertService, AlertService>();
-        services.AddSingleton<IBackupService, BackupService>();
-        services.AddSingleton<ISecurityAuditService, SecurityAuditService>();
-        services.AddSingleton<IQueryAnalyzerService, QueryAnalyzerService>();
-        services.AddSingleton<IStoredProcedureService, StoredProcedureService>();
+        services.AddScoped<IDatabaseAnalyzerService, DatabaseAnalyzerService>();
+        services.AddScoped<IDatabaseMonitorService, DatabaseMonitorService>();
+        services.AddScoped<IQueryAnalyzerService, QueryAnalyzerService>();
+        services.AddScoped<IBackupService, BackupService>();
+        services.AddScoped<IStoredProcedureService, StoredProcedureService>();
+        services.AddScoped<ISecurityAuditService, SecurityAuditService>();
+        services.AddScoped<IAlertService, AlertService>();
+        services.AddScoped<IDatabaseOptimizerService, DatabaseOptimizerService>();
+        services.AddScoped<IAgentJobsService, AgentJobsService>();
+        services.AddScoped<IDbccCheckService, DbccCheckService>();
+        services.AddScoped<IIdentityColumnService, IdentityColumnService>();
 
         // Add HTTP client for external API calls
         services.AddHttpClient();

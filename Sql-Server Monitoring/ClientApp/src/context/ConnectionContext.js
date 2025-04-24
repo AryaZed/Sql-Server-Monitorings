@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { HubConnectionBuilder } from '@microsoft/signalr';
+import signalRService from '../services/signalrService';
+import { servers } from '../services/api';
 
 const ConnectionContext = createContext();
 
@@ -7,53 +8,86 @@ export function ConnectionProvider({ children }) {
   const [connectionString, setConnectionString] = useState('');
   const [serverName, setServerName] = useState('');
   const [isConnected, setIsConnected] = useState(false);
-  const [hubConnection, setHubConnection] = useState(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
 
   useEffect(() => {
     // For demo, assume we're already connected to a default server
     const defaultConnection = 'Server=SQL-PROD-01;Database=master;Trusted_Connection=True;';
     const defaultServer = 'SQL-PROD-01';
     
-    setConnectionString(defaultConnection);
-    setServerName(defaultServer);
-    setIsConnected(true);
+    // Initialize the connection
+    const initConnection = async () => {
+      setConnectionString(defaultConnection);
+      setServerName(defaultServer);
+      setIsConnected(true);
+      
+      // Save to session storage
+      sessionStorage.setItem('connectionString', defaultConnection);
+      
+      // Start the SignalR connection
+      await signalRService.start();
+      
+      // Join the server group for real-time updates
+      await signalRService.joinGroup(defaultServer);
+    };
     
-    // Set up SignalR hub connection for real-time updates
-    const newHubConnection = new HubConnectionBuilder()
-      .withUrl('/monitoringHub')
-      .withAutomaticReconnect()
-      .build();
-    
-    setHubConnection(newHubConnection);
-    
-    // In a real app, we would start the connection
-    // newHubConnection.start().catch(err => console.error('Error starting SignalR connection:', err));
+    initConnection();
     
     return () => {
-      // In a real app, we would stop the connection when unmounting
-      // if (newHubConnection) {
-      //   newHubConnection.stop();
-      // }
+      // Clean up SignalR connection when the app unmounts
+      signalRService.stop();
     };
   }, []);
 
   const connect = async (newConnectionString, newServerName) => {
     try {
-      // In a real app, we would validate the connection string here
-      // await api.testConnection(newConnectionString);
+      setIsConnecting(true);
+      setConnectionError('');
       
-      setConnectionString(newConnectionString);
-      setServerName(newServerName);
-      setIsConnected(true);
+      // Test the connection first
+      const response = await servers.testConnection(newConnectionString);
       
-      return true;
+      if (response.data.success) {
+        // Save to session storage
+        sessionStorage.setItem('connectionString', newConnectionString);
+        
+        // Leave the current server group if any
+        if (serverName) {
+          await signalRService.leaveGroup(serverName);
+        }
+        
+        // Update the context
+        setConnectionString(newConnectionString);
+        setServerName(newServerName);
+        setIsConnected(true);
+        
+        // Join the new server group
+        await signalRService.joinGroup(newServerName);
+        
+        setIsConnecting(false);
+        return true;
+      } else {
+        setConnectionError(response.data.message || 'Failed to connect to server');
+        setIsConnecting(false);
+        return false;
+      }
     } catch (error) {
       console.error('Connection failed:', error);
+      setConnectionError(error.message || 'Failed to connect to server');
+      setIsConnecting(false);
       return false;
     }
   };
 
-  const disconnect = () => {
+  const disconnect = async () => {
+    // Leave the current server group
+    if (serverName) {
+      await signalRService.leaveGroup(serverName);
+    }
+    
+    // Clear connection data
+    sessionStorage.removeItem('connectionString');
     setConnectionString('');
     setServerName('');
     setIsConnected(false);
@@ -65,9 +99,11 @@ export function ConnectionProvider({ children }) {
         connectionString,
         serverName,
         isConnected,
-        hubConnection,
+        isConnecting,
+        connectionError,
         connect,
-        disconnect
+        disconnect,
+        signalRService // Expose the SignalR service through the context
       }}
     >
       {children}
