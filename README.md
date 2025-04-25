@@ -34,7 +34,7 @@ This project is built using:
 
 1. Clone the repository
 ```
-git clone https://github.com/yourusername/sql-server-monitoring.git
+git clone https://github.com/AryaZed/sql-server-monitoring.git
 cd sql-server-monitoring
 ```
 
@@ -62,7 +62,7 @@ dotnet run --project "Sql-Server Monitoring/Sql-Server Monitoring.csproj"
 
 1. Clone the repository
 ```
-git clone https://github.com/yourusername/sql-server-monitoring.git
+git clone https://github.com/AryaZed/sql-server-monitoring.git
 cd sql-server-monitoring
 ```
 
