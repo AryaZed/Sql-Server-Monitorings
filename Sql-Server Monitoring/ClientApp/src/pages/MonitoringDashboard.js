@@ -43,7 +43,7 @@ import {
   PlayArrow as PlayArrowIcon,
   Stop as StopIcon,
   MoreVert as MoreVertIcon,
-  Database as DatabaseIcon,
+  Storage as DatabaseIcon,
   Security as SecurityIcon,
   Backup as BackupIcon,
   Code as CodeIcon,
@@ -63,7 +63,7 @@ import {
   LineElement,
   BarElement,
   Title,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
   ArcElement
 } from 'chart.js';
@@ -77,7 +77,7 @@ ChartJS.register(
   LineElement,
   BarElement,
   Title,
-  Tooltip,
+  ChartTooltip,
   Legend,
   ArcElement
 );

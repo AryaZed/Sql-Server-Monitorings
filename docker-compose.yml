@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  sql-server-monitoring:
+    build:
+      context: .
+      dockerfile: Sql-Server Monitoring/Dockerfile
+    ports:
+      - "5000:80"
+      - "5001:443"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=https://+:443;http://+:80
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=password
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=master;User Id=sa;Password=YourStrongPassword123!;TrustServerCertificate=True;
+    volumes:
+      - ./https:/https:ro
+      - sql-monitor-data:/app/data
+    depends_on:
+      - sqlserver
+    restart: unless-stopped
+    networks:
+      - sql-monitor-network
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrongPassword123!
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    restart: unless-stopped
+    networks:
+      - sql-monitor-network
+
+volumes:
+  sqlserver-data:
+  sql-monitor-data:
+
+networks:
+  sql-monitor-network:
+    driver: bridge 

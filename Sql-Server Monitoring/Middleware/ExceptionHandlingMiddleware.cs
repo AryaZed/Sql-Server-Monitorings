@@ -36,6 +36,7 @@ namespace Sql_Server_Monitoring.Middleware
         {
             HttpStatusCode statusCode;
             string errorMessage;
+            string errorCode = "INTERNAL_ERROR";
 
             // Determine the status code and error message based on the exception type
             switch (exception)
@@ -43,23 +44,78 @@ namespace Sql_Server_Monitoring.Middleware
                 case ArgumentException _:
                     statusCode = HttpStatusCode.BadRequest;
                     errorMessage = "Invalid arguments provided.";
+                    errorCode = "INVALID_ARGUMENT";
                     break;
                 case KeyNotFoundException _:
                     statusCode = HttpStatusCode.NotFound;
                     errorMessage = "The requested resource was not found.";
+                    errorCode = "RESOURCE_NOT_FOUND";
                     break;
                 case UnauthorizedAccessException _:
                     statusCode = HttpStatusCode.Unauthorized;
                     errorMessage = "Unauthorized access to the resource.";
+                    errorCode = "UNAUTHORIZED";
                     break;
                 case InvalidOperationException _:
                     statusCode = HttpStatusCode.BadRequest;
                     errorMessage = "Invalid operation.";
+                    errorCode = "INVALID_OPERATION";
                     break;
                 case SqlException sqlEx:
                     statusCode = HttpStatusCode.InternalServerError;
-                    errorMessage = "Database error occurred.";
-                    _logger.LogError(sqlEx, "SQL Exception: {ErrorMessage}, Number: {Number}", sqlEx.Message, sqlEx.Number);
+                    errorCode = $"SQL_{sqlEx.Number}";
+
+                    // Handle specific SQL error codes
+                    switch (sqlEx.Number)
+                    {
+                        case 2:
+                            errorMessage = "Could not connect to SQL Server instance.";
+                            statusCode = HttpStatusCode.ServiceUnavailable;
+                            break;
+                        case 4060:
+                            errorMessage = "Database access denied.";
+                            statusCode = HttpStatusCode.Forbidden;
+                            break;
+                        case 4064:
+                            errorMessage = "SQL Server login failed.";
+                            statusCode = HttpStatusCode.Unauthorized;
+                            break;
+                        case 208:
+                            errorMessage = "The specified object was not found in the database.";
+                            statusCode = HttpStatusCode.NotFound;
+                            break;
+                        case 1205:
+                            errorMessage = "Transaction deadlock detected.";
+                            break;
+                        case 229:
+                            errorMessage = "The current operation was canceled by user.";
+                            break;
+                        case 547:
+                            errorMessage = "Database constraint violation.";
+                            statusCode = HttpStatusCode.BadRequest;
+                            break;
+                        case 2627:
+                        case 2601:
+                            errorMessage = "Duplicate key violation.";
+                            statusCode = HttpStatusCode.Conflict;
+                            break;
+                        case 8645:
+                        case 8651:
+                            errorMessage = "A timeout occurred while processing the request.";
+                            statusCode = HttpStatusCode.RequestTimeout;
+                            break;
+                        default:
+                            errorMessage = "Database error occurred.";
+                            break;
+                    }
+                    
+                    _logger.LogError(sqlEx, "SQL Exception: {ErrorMessage}, Number: {Number}, State: {State}, Server: {Server}", 
+                        sqlEx.Message, sqlEx.Number, sqlEx.State, sqlEx.Server);
+                    break;
+                case TimeoutException _:
+                    statusCode = HttpStatusCode.RequestTimeout;
+                    errorMessage = "The request timed out.";
+                    errorCode = "TIMEOUT";
                     break;
                 default:
                     statusCode = HttpStatusCode.InternalServerError;
@@ -67,7 +123,9 @@ namespace Sql_Server_Monitoring.Middleware
                     break;
             }
 
-            _logger.LogError(exception, "Exception: {ExceptionType}: {ExceptionMessage}", exception.GetType().Name, exception.Message);
+            var requestId = Guid.NewGuid().ToString();
+            _logger.LogError(exception, "RequestId: {RequestId}, Exception: {ExceptionType}: {ExceptionMessage}", 
+                requestId, exception.GetType().Name, exception.Message);
 
             // Set the response status code
             context.Response.StatusCode = (int)statusCode;
@@ -78,6 +136,8 @@ namespace Sql_Server_Monitoring.Middleware
             {
                 StatusCode = (int)statusCode,
                 Message = errorMessage,
+                ErrorCode = errorCode,
+                RequestId = requestId,
                 DetailedMessage = _env.IsDevelopment() ? exception.Message : null,
                 StackTrace = _env.IsDevelopment() ? exception.StackTrace : null,
                 RequestPath = context.Request.Path,
@@ -85,7 +145,11 @@ namespace Sql_Server_Monitoring.Middleware
             };
 
             // Serialize and return the response
-            var json = JsonSerializer.Serialize(response);
+            var json = JsonSerializer.Serialize(response, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = _env.IsDevelopment()
+            });
             return context.Response.WriteAsync(json);
         }
     }
@@ -94,6 +158,8 @@ namespace Sql_Server_Monitoring.Middleware
     {
         public int StatusCode { get; set; }
         public string Message { get; set; }
+        public string ErrorCode { get; set; }
+        public string RequestId { get; set; }
         public string DetailedMessage { get; set; }
         public string StackTrace { get; set; }
         public string RequestPath { get; set; }

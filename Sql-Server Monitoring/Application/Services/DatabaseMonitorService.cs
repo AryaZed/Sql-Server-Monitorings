@@ -274,7 +274,7 @@ namespace Sql_Server_Monitoring.Application.Services
                 {
                     var issue = new DbIssue
                     {
-                        Type = IssueType.System,
+                        Type = IssueType.Connectivity,
                         Severity = IssueSeverity.High,
                         Message = $"Monitoring service experiencing errors: {ex.Message}",
                         RecommendedAction = "Check application logs for details.",
@@ -284,7 +284,7 @@ namespace Sql_Server_Monitoring.Application.Services
                     try
                     {
                         await _issueRepository.AddIssueAsync(issue);
-                        await TriggerAlertIfEnabledAsync(connectionString, null, issue, AlertType.SystemError);
+                        await TriggerAlertIfEnabledAsync(connectionString, null, issue, AlertType.DatabaseConnectivity);
                     }
                     catch (Exception innerEx)
                     {
@@ -383,7 +383,7 @@ namespace Sql_Server_Monitoring.Application.Services
                     await _issueRepository.AddIssueAsync(issue);
 
                     // Send alert if enabled
-                    await TriggerAlertIfEnabledAsync(connectionString, dbName, issue, AlertType.DiskSpace);
+                    await TriggerAlertIfEnabledAsync(connectionString, dbName, issue, AlertType.LowDiskSpace);
                 }
             }
 

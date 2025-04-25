@@ -12,6 +12,9 @@ using System.Text.Json.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.AspNetCore.SpaServices.Extensions;
 using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 public class Program
 {
@@ -113,15 +116,40 @@ public class Program
         {
             options.AddDefaultPolicy(builder =>
             {
-                builder.WithOrigins(configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "https://localhost:5001" })
-                       .AllowAnyMethod()
-                       .AllowAnyHeader()
-                       .AllowCredentials();
+                var allowedOrigins = configuration.GetSection("AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+
+                if (allowedOrigins.Length > 0)
+                {
+                    builder.WithOrigins(allowedOrigins)
+                           .AllowAnyMethod()
+                           .WithHeaders("Authorization", "Content-Type", "X-Requested-With")
+                           .AllowCredentials()
+                           .SetIsOriginAllowedToAllowWildcardSubdomains();
+                }
+                else
+                {
+                    builder.AllowAnyOrigin()
+                           .AllowAnyMethod()
+                           .WithHeaders("Authorization", "Content-Type", "X-Requested-With");
+                }
             });
         });
 
         // Health checks
-        services.AddHealthChecks();
+        services.AddHealthChecks()
+            .AddSqlServer(
+                configuration.GetConnectionString("DefaultConnection") ?? "",
+                name: "sqlserver", 
+                tags: new[] { "database", "sql" },
+                timeout: TimeSpan.FromSeconds(5))
+            .AddCheck("self", () => HealthCheckResult.Healthy(), 
+                tags: new[] { "service" });
+                
+        services.AddHealthChecksUI(setupSettings: setup =>
+        {
+            setup.SetEvaluationTimeInSeconds(60);
+            setup.MaximumHistoryEntriesPerEndpoint(10);
+        }).AddInMemoryStorage();
 
         // Authentication and Authorization
         services.AddAuthentication("Bearer")
@@ -148,15 +176,16 @@ public class Program
         services.AddSingleton<IOptimizationScriptRepository, OptimizationScriptRepository>();
         services.AddSingleton<ISettingsRepository, SettingsRepository>();
         services.AddSingleton<IStoredProcedureRepository, StoredProcedureRepository>();
+        services.AddSingleton<IAlertRepository, AlertRepository>();
 
         // Register services
         services.AddScoped<IDatabaseAnalyzerService, DatabaseAnalyzerService>();
-        services.AddScoped<IDatabaseMonitorService, DatabaseMonitorService>();
+        services.AddSingleton<IDatabaseMonitorService, DatabaseMonitorService>();
         services.AddScoped<IQueryAnalyzerService, QueryAnalyzerService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<IStoredProcedureService, StoredProcedureService>();
         services.AddScoped<ISecurityAuditService, SecurityAuditService>();
-        services.AddScoped<IAlertService, AlertService>();
+        services.AddSingleton<IAlertService, AlertService>();
         services.AddScoped<IDatabaseOptimizerService, DatabaseOptimizerService>();
         services.AddScoped<IAgentJobsService, AgentJobsService>();
         services.AddScoped<IDbccCheckService, DbccCheckService>();
@@ -173,9 +202,6 @@ public class Program
         
         // Add caching
         services.AddMemoryCache();
-
-        // Health checks
-        services.AddHealthChecks();
 
         // Add SPA static files support
         services.AddSpaStaticFiles(configuration =>
@@ -221,7 +247,16 @@ public class Program
         app.UseAuthorization();
 
         // Health checks
-        app.UseHealthChecks("/health");
+        app.MapHealthChecks("/health", new HealthCheckOptions
+        {
+            Predicate = _ => true,
+            ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+        });
+        
+        app.MapHealthChecksUI(options => 
+        {
+            options.UIPath = "/health-ui";
+        });
 
         // Map controllers and SignalR hubs
         app.MapControllers();

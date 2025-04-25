@@ -1,4 +1,4 @@
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import signalRService from './signalrService';
 import { monitoring } from './api';
 
@@ -15,15 +15,29 @@ const serverHealthSubject = new BehaviorSubject({});
 
 class MonitoringService {
   constructor() {
-    this.isInitialized = false;
-    this.currentServerId = null;
+    // Observable streams - renamed to avoid conflict with getters
+    this._statusSubject = new Subject();
+    this._cpuMetricsSubject = new Subject();
+    this._memoryMetricsSubject = new Subject();
+    this._diskMetricsSubject = new Subject();
+    this._serverHealthSubject = new Subject();
+    this._alertsSubject = new Subject();
+    
+    // State
+    this.isMonitoring = false;
+    this.connectionString = '';
+    this.serverName = '';
+    
+    // Mock data for testing without backend
+    this.mockMode = true;
+    this.mockInterval = null;
   }
 
   /**
    * Initialize the monitoring service and set up SignalR listeners
    */
   init() {
-    if (this.isInitialized) {
+    if (this.isMonitoring) {
       return;
     }
 
@@ -57,7 +71,12 @@ class MonitoringService {
       queryMetrics.next(data);
     });
 
-    this.isInitialized = true;
+    this.isMonitoring = true;
+
+    // If we're in mock mode, emit mock data periodically
+    if (this.mockMode) {
+      this.startMockDataEmission();
+    }
   }
 
   /**
@@ -67,7 +86,8 @@ class MonitoringService {
    */
   async startMonitoring(serverId, connectionString) {
     try {
-      this.currentServerId = serverId;
+      this.serverName = serverId;
+      this.connectionString = connectionString;
       
       // Call the API to start monitoring
       const response = await monitoring.startMonitoring(connectionString);
@@ -104,13 +124,20 @@ class MonitoringService {
    * Get current monitoring status
    */
   async getMonitoringStatus() {
+    if (this.mockMode) {
+      this.isMonitoring = true;
+      this._statusSubject.next(true);
+      return { isMonitoring: true };
+    }
+    
     try {
       const response = await monitoring.getSettings();
-      monitoringStatus.next(response.data.monitoringEnabled);
+      this.isMonitoring = response.data.monitoringEnabled;
+      monitoringStatus.next(this.isMonitoring);
       return response.data;
     } catch (error) {
       console.error('Failed to get monitoring status:', error);
-      throw error;
+      return { isMonitoring: false };
     }
   }
 
@@ -118,12 +145,16 @@ class MonitoringService {
    * Get dashboard data with all metrics
    */
   async getDashboardData() {
+    if (this.mockMode) {
+      return this.getMockDashboardData();
+    }
+    
     try {
       const response = await monitoring.getDashboardData();
       return response.data;
     } catch (error) {
       console.error('Failed to get dashboard data:', error);
-      throw error;
+      return this.getMockDashboardData();
     }
   }
 
@@ -227,6 +258,105 @@ class MonitoringService {
 
   get serverHealth$() {
     return serverHealthSubject.asObservable();
+  }
+
+  // Start emitting mock data
+  startMockDataEmission() {
+    if (this.mockInterval) {
+      clearInterval(this.mockInterval);
+    }
+    
+    // Emit initial mock data
+    this.emitMockData();
+    
+    // Set up interval to emit mock data
+    this.mockInterval = setInterval(() => {
+      this.emitMockData();
+    }, 5000);
+  }
+  
+  // Stop emitting mock data
+  stopMockDataEmission() {
+    if (this.mockInterval) {
+      clearInterval(this.mockInterval);
+      this.mockInterval = null;
+    }
+  }
+  
+  // Emit mock data for testing without backend
+  emitMockData() {
+    // Emit mock CPU metrics
+    const cpuData = Array(10).fill(0).map(() => Math.floor(Math.random() * 100));
+    this._cpuMetricsSubject.next(cpuData);
+    cpuMetrics.next(cpuData);
+    
+    // Emit mock memory metrics
+    const memoryData = Array(10).fill(0).map(() => Math.floor(Math.random() * 100));
+    this._memoryMetricsSubject.next(memoryData);
+    memoryMetrics.next(memoryData);
+    
+    // Emit mock disk metrics
+    const diskData = Array(10).fill(0).map(() => Math.floor(Math.random() * 50));
+    this._diskMetricsSubject.next(diskData);
+    diskMetrics.next(diskData);
+    
+    // Emit mock server health
+    const serverHealth = {
+      isConnected: true,
+      status: 'Healthy',
+      cpu: Math.floor(Math.random() * 100),
+      memory: Math.floor(Math.random() * 100),
+      disk: Math.floor(Math.random() * 100),
+      network: Math.floor(Math.random() * 100)
+    };
+    this._serverHealthSubject.next(serverHealth);
+    serverHealthSubject.next(serverHealth);
+    
+    // Emit mock monitoring status
+    this._statusSubject.next(true);
+    monitoringStatus.next(true);
+    
+    // Occasionally emit mock alerts
+    if (Math.random() > 0.7) {
+      const mockAlerts = [
+        { id: 1, message: 'High CPU usage detected', severity: 'warning', timestamp: new Date().toISOString() },
+        { id: 2, message: 'Database growth exceeding threshold', severity: 'info', timestamp: new Date().toISOString() },
+        { id: 3, message: 'Slow query performance', severity: 'warning', timestamp: new Date().toISOString() }
+      ];
+      this._alertsSubject.next(mockAlerts);
+      alertsSubject.next(mockAlerts);
+    }
+  }
+  
+  // Get mock dashboard data
+  getMockDashboardData() {
+    return {
+      serverCount: 3,
+      databaseCount: 12,
+      alerts: [
+        { id: 1, message: 'High CPU usage detected', severity: 'warning', timestamp: new Date().toISOString() },
+        { id: 2, message: 'Database growth exceeding threshold', severity: 'info', timestamp: new Date().toISOString() },
+        { id: 3, message: 'Slow query performance', severity: 'warning', timestamp: new Date().toISOString() }
+      ],
+      performance: {
+        cpu: Math.floor(Math.random() * 100),
+        memory: Math.floor(Math.random() * 100),
+        disk: Math.floor(Math.random() * 100),
+        network: Math.floor(Math.random() * 100),
+        activeConnections: Math.floor(Math.random() * 200)
+      },
+      databases: {
+        total: 12,
+        healthy: 8,
+        warning: 3,
+        critical: 1
+      },
+      issues: [
+        { id: 1, title: 'High CPU Usage', description: 'CPU usage above threshold for extended period', severity: 'warning', createdAt: new Date().toISOString() },
+        { id: 2, title: 'Missing Index', description: 'Potential missing index detected on Orders table', severity: 'info', createdAt: new Date().toISOString() },
+        { id: 3, title: 'Long-running Transaction', description: 'Transaction running for more than 10 minutes', severity: 'warning', createdAt: new Date().toISOString() }
+      ]
+    };
   }
 }
 

@@ -14,31 +14,33 @@ namespace Sql_Server_Monitoring.Controllers
         private readonly IDatabaseRepository _databaseRepository;
         private readonly IDatabaseAnalyzerService _analyzerService;
         private readonly ILogger<DatabasesController> _logger;
+        private readonly string _connectionString;
 
         public DatabasesController(
             IDatabaseRepository databaseRepository,
             IDatabaseAnalyzerService analyzerService,
+            IConfiguration configuration,
             ILogger<DatabasesController> logger)
         {
             _databaseRepository = databaseRepository;
             _analyzerService = analyzerService;
             _logger = logger;
+            _connectionString = configuration.GetConnectionString("DefaultConnection");
         }
 
         /// <summary>
         /// Gets a list of all user databases on the server.
         /// </summary>
-        /// <param name="connectionString">The connection string to the SQL Server.</param>
         /// <returns>A list of database names.</returns>
         [HttpGet]
         [ProducesResponseType(typeof(IEnumerable<string>), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<IEnumerable<string>>> GetDatabases([FromQuery] string connectionString)
+        public async Task<ActionResult<IEnumerable<string>>> GetDatabases()
         {
             try
             {
-                var databases = await _databaseRepository.GetUserDatabasesAsync(connectionString);
+                var databases = await _databaseRepository.GetUserDatabasesAsync(_connectionString);
                 return Ok(databases);
             }
             catch (Exception ex)
@@ -51,7 +53,6 @@ namespace Sql_Server_Monitoring.Controllers
         /// <summary>
         /// Gets detailed information about a specific database.
         /// </summary>
-        /// <param name="connectionString">The connection string to the SQL Server.</param>
         /// <param name="databaseName">The name of the database.</param>
         /// <returns>Detailed information about the database.</returns>
         [HttpGet("{databaseName}")]
@@ -59,11 +60,11 @@ namespace Sql_Server_Monitoring.Controllers
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<Database>> GetDatabase([FromQuery] string connectionString, string databaseName)
+        public async Task<ActionResult<Database>> GetDatabase(string databaseName)
         {
             try
             {
-                var database = await _databaseRepository.GetDatabaseDetailsAsync(connectionString, databaseName);
+                var database = await _databaseRepository.GetDatabaseDetailsAsync(_connectionString, databaseName);
                 if (database == null)
                 {
                     return NotFound(new { message = $"Database '{databaseName}' not found." });
@@ -80,7 +81,6 @@ namespace Sql_Server_Monitoring.Controllers
         /// <summary>
         /// Gets a list of tables in a specific database.
         /// </summary>
-        /// <param name="connectionString">The connection string to the SQL Server.</param>
         /// <param name="databaseName">The name of the database.</param>
         /// <returns>A list of tables in the database.</returns>
         [HttpGet("{databaseName}/tables")]
@@ -88,11 +88,11 @@ namespace Sql_Server_Monitoring.Controllers
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<IEnumerable<Table>>> GetTables([FromQuery] string connectionString, string databaseName)
+        public async Task<ActionResult<IEnumerable<Table>>> GetTables(string databaseName)
         {
             try
             {
-                var tables = await _databaseRepository.GetTablesAsync(connectionString, databaseName);
+                var tables = await _databaseRepository.GetTablesAsync(_connectionString, databaseName);
                 return Ok(tables);
             }
             catch (Exception ex)
@@ -105,7 +105,6 @@ namespace Sql_Server_Monitoring.Controllers
         /// <summary>
         /// Analyzes a database for issues.
         /// </summary>
-        /// <param name="connectionString">The connection string to the SQL Server.</param>
         /// <param name="databaseName">The name of the database to analyze.</param>
         /// <returns>A list of detected issues in the database.</returns>
         [HttpPost("{databaseName}/analyze")]
@@ -113,11 +112,11 @@ namespace Sql_Server_Monitoring.Controllers
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
-        public async Task<ActionResult<IEnumerable<DbIssue>>> AnalyzeDatabase([FromQuery] string connectionString, string databaseName)
+        public async Task<ActionResult<IEnumerable<DbIssue>>> AnalyzeDatabase(string databaseName)
         {
             try
             {
-                var issues = await _analyzerService.AnalyzeDatabaseAsync(connectionString, databaseName);
+                var issues = await _analyzerService.AnalyzeDatabaseAsync(_connectionString, databaseName);
                 return Ok(issues);
             }
             catch (Exception ex)
@@ -130,7 +129,6 @@ namespace Sql_Server_Monitoring.Controllers
         /// <summary>
         /// Executes a script on a specific database.
         /// </summary>
-        /// <param name="connectionString">The connection string to the SQL Server.</param>
         /// <param name="databaseName">The name of the database.</param>
         /// <param name="script">The SQL script to execute.</param>
         /// <returns>A result indicating success or failure.</returns>
@@ -142,13 +140,12 @@ namespace Sql_Server_Monitoring.Controllers
         [ProducesResponseType(404)]
         [ProducesResponseType(500)]
         public async Task<ActionResult> ExecuteScript(
-            [FromQuery] string connectionString,
             string databaseName,
             [FromBody] ScriptExecutionRequest script)
         {
             try
             {
-                await _databaseRepository.ExecuteScriptAsync(connectionString, databaseName, script.Script);
+                await _databaseRepository.ExecuteScriptAsync(_connectionString, databaseName, script.Script);
                 return Ok(new { message = "Script executed successfully." });
             }
             catch (Exception ex)

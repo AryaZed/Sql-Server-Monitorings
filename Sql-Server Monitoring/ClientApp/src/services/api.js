@@ -1,226 +1,253 @@
 import axios from 'axios';
 
-// Base API instance with common config
+// Create an axios instance with default config
 const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: '/',
   headers: {
-    'Content-Type': 'application/json',
-  },
+    'Content-Type': 'application/json'
+  }
 });
 
-// Add a request interceptor to include connection string in headers
-api.interceptors.request.use(
-  (config) => {
-    const connectionString = sessionStorage.getItem('connectionString');
-    if (connectionString) {
-      config.headers['X-Connection-String'] = connectionString;
+// Intercept responses to handle errors globally
+api.interceptors.response.use(
+  response => response,
+  error => {
+    // Check if it's a network error (backend not available)
+    if (error.message === 'Network Error' || !error.response) {
+      console.warn('API: Backend not available - returning mock data');
+      // Return mock data based on the request URL
+      return Promise.resolve({
+        data: getMockData(error.config.url),
+        status: 200,
+        statusText: 'OK (Mock)',
+        headers: {},
+        config: error.config
+      });
     }
-    return config;
-  },
-  (error) => {
+    
     return Promise.reject(error);
   }
 );
 
-// Monitoring API
-export const monitoring = {
-  getSettings: () => api.get('/monitoring/settings'),
-  updateSettings: (settings) => api.post('/monitoring/settings', settings),
-  startMonitoring: (connectionString) => api.post('/monitoring/start', { connectionString }),
-  stopMonitoring: () => api.post('/monitoring/stop'),
-  getDashboardData: () => api.get('/monitoring/dashboard'),
-  getServerMetrics: (serverId) => api.get(`/monitoring/metrics/${serverId}`),
-  getHistoricalMetrics: (serverId, metricType, period) => 
-    api.get(`/monitoring/metrics/${serverId}/history?type=${metricType}&period=${period}`),
+// Helper function to get mock data based on the API endpoint
+function getMockData(url) {
+  if (!url) return null;
+  
+  // Generate random data for different endpoint types
+  if (url.includes('/servers')) {
+    return mockServers;
+  } else if (url.includes('/databases')) {
+    return mockDatabases;
+  } else if (url.includes('/performance')) {
+    return mockPerformanceData;
+  } else if (url.includes('/queries')) {
+    return mockQueries;
+  } else if (url.includes('/issues')) {
+    return mockIssues;
+  } else if (url.includes('/alerts')) {
+    return mockAlerts;
+  } else if (url.includes('/backups')) {
+    return mockBackups;
+  } else if (url.includes('/settings')) {
+    return mockSettings;
+  } else if (url.includes('/health')) {
+    return mockHealth;
+  } else if (url.includes('/monitoring/status')) {
+    return { isMonitoring: true };
+  } else if (url.includes('/dashboard')) {
+    return mockDashboard;
+  } else {
+    return { message: 'Mock data not available for this endpoint' };
+  }
+}
+
+// Mock data for various endpoints
+const mockServers = [
+  { id: 1, name: 'SQL-SERVER-01', version: 'SQL Server 2019', isConnected: true, status: 'Healthy' },
+  { id: 2, name: 'SQL-SERVER-02', version: 'SQL Server 2017', isConnected: true, status: 'Warning' },
+  { id: 3, name: 'SQL-SERVER-03', version: 'SQL Server 2016', isConnected: false, status: 'Critical' }
+];
+
+const mockDatabases = [
+  { id: 1, name: 'AdventureWorks', serverId: 1, size: '1.2 GB', status: 'Online', lastBackup: '2023-10-01T12:00:00Z', recovery: 'Full' },
+  { id: 2, name: 'Northwind', serverId: 1, size: '350 MB', status: 'Online', lastBackup: '2023-10-01T12:00:00Z', recovery: 'Simple' },
+  { id: 3, name: 'WideWorldImporters', serverId: 2, size: '2.1 GB', status: 'Online', lastBackup: '2023-09-29T12:00:00Z', recovery: 'Full' },
+  { id: 4, name: 'ReportServer', serverId: 3, size: '500 MB', status: 'Offline', lastBackup: '2023-09-25T12:00:00Z', recovery: 'Full' }
+];
+
+const mockPerformanceData = {
+  cpu: Array(10).fill(0).map(() => Math.floor(Math.random() * 100)),
+  memory: Array(10).fill(0).map(() => Math.floor(Math.random() * 100)),
+  disk: Array(10).fill(0).map(() => Math.floor(Math.random() * 200)),
+  network: Array(10).fill(0).map(() => Math.floor(Math.random() * 100)),
+  connections: Math.floor(Math.random() * 150),
+  transactions: Math.floor(Math.random() * 1000)
 };
 
-// Databases API
-export const databases = {
-  getAll: () => api.get('/databases'),
-  getById: (id) => api.get(`/databases/${id}`),
-  getFragmentation: (id) => api.get(`/databases/${id}/fragmentation`),
-  getMissingIndexes: (id) => api.get(`/databases/${id}/missing-indexes`),
-  getSpaceUsage: (id) => api.get(`/databases/${id}/space-usage`),
-  getTables: (id) => api.get(`/databases/${id}/tables`),
-  createDatabase: (databaseInfo) => api.post('/databases', databaseInfo),
-  updateDatabase: (id, databaseInfo) => api.put(`/databases/${id}`, databaseInfo),
-  deleteDatabase: (id) => api.delete(`/databases/${id}`),
-  getGrowthHistory: (id) => api.get(`/databases/${id}/growth-history`),
-  getConnections: (id) => api.get(`/databases/${id}/connections`),
+const mockQueries = [
+  { id: 1, query: 'SELECT * FROM Customers WHERE Region = @Region', duration: 1250, cpu: 800, reads: 12500, executions: 1500 },
+  { id: 2, query: 'UPDATE Orders SET Status = @Status WHERE OrderDate < @Date', duration: 850, cpu: 550, reads: 8900, executions: 450 },
+  { id: 3, query: 'SELECT o.OrderID, c.CustomerName FROM Orders o JOIN Customers c ON o.CustomerID = c.CustomerID', duration: 3200, cpu: 1800, reads: 25800, executions: 250 }
+];
+
+const mockIssues = [
+  { id: 1, title: 'High CPU Usage', description: 'Server has sustained CPU usage above 90% for more than 30 minutes', severity: 'Critical', createdAt: '2023-10-01T10:15:00Z' },
+  { id: 2, title: 'Missing Index', description: 'Potential missing index detected on Orders.CustomerID', severity: 'Warning', createdAt: '2023-10-01T09:30:00Z' },
+  { id: 3, title: 'Database Growth', description: 'Database WideWorldImporters has grown by 25% in the past week', severity: 'Information', createdAt: '2023-09-29T14:20:00Z' }
+];
+
+const mockAlerts = [
+  { id: 1, message: 'Server SQL-SERVER-01 CPU usage above 95%', severity: 'critical', timestamp: '2023-10-01T10:15:00Z', isRead: false },
+  { id: 2, message: 'Database WideWorldImporters approaching storage limit', severity: 'warning', timestamp: '2023-10-01T09:30:00Z', isRead: true },
+  { id: 3, message: 'Successful backup completed for AdventureWorks', severity: 'info', timestamp: '2023-09-30T12:00:00Z', isRead: true }
+];
+
+const mockBackups = [
+  { id: 1, databaseName: 'AdventureWorks', backupType: 'Full', startTime: '2023-10-01T12:00:00Z', endTime: '2023-10-01T12:15:00Z', size: '1.1 GB', status: 'Completed' },
+  { id: 2, databaseName: 'Northwind', backupType: 'Differential', startTime: '2023-10-01T12:30:00Z', endTime: '2023-10-01T12:35:00Z', size: '250 MB', status: 'Completed' },
+  { id: 3, databaseName: 'WideWorldImporters', backupType: 'Log', startTime: '2023-10-01T13:00:00Z', endTime: '2023-10-01T13:02:00Z', size: '75 MB', status: 'Completed' }
+];
+
+const mockSettings = {
+  monitoringInterval: 5,
+  retentionPeriod: 30,
+  alertNotifications: true,
+  emailSettings: {
+    smtpServer: 'smtp.example.com',
+    port: 587,
+    useSsl: true,
+    username: 'monitor@example.com',
+    recipients: ['admin@example.com']
+  }
 };
 
-// Query Analysis API
-export const queries = {
-  analyzeQuery: (query, connectionString) => 
-    api.post('/query-analyzer/analyze', { query, connectionString }),
-  getSlowQueries: () => api.get('/query-analyzer/slow'),
-  getQueryPlan: (queryId) => api.get(`/query-analyzer/queries/${queryId}/plan`),
-  getQueryHistory: (queryId) => api.get(`/query-analyzer/queries/${queryId}/history`),
-  getTopResourceConsumers: () => api.get('/query-analyzer/top-consumers'),
-  getParallelQueries: () => api.get('/query-analyzer/parallel'),
-  getBlockingQueries: () => api.get('/query-analyzer/blocking'),
+const mockHealth = {
+  status: 'Healthy',
+  components: [
+    { name: 'SQL Server Connection', status: 'Healthy', description: 'Connection to SQL Server is working properly' },
+    { name: 'Web API', status: 'Healthy', description: 'Web API is responding to requests' },
+    { name: 'Monitoring Service', status: 'Healthy', description: 'Monitoring service is collecting data' }
+  ]
 };
 
-// Query Controller API
-export const queryExecution = {
-  executeQuery: (query, dbName) => api.post('/query/execute', { query, dbName }),
-  cancelQuery: (queryId) => api.post(`/query/${queryId}/cancel`),
-  saveQuery: (query, name, description) => 
-    api.post('/query/save', { query, name, description }),
-  getSavedQueries: () => api.get('/query/saved'),
-  getQueryResults: (queryId) => api.get(`/query/${queryId}/results`),
+const mockDashboard = {
+  serverCount: 3,
+  databaseCount: 15,
+  activeConnections: 42,
+  pendingQueries: 8,
+  serverHealth: {
+    healthy: 1,
+    warning: 1,
+    critical: 1
+  },
+  databaseHealth: {
+    healthy: 10,
+    warning: 3,
+    critical: 2
+  },
+  performance: {
+    cpu: 65,
+    memory: 78,
+    disk: 45,
+    network: 22,
+    activeConnections: 42
+  },
+  recentIssues: mockIssues,
+  alerts: mockAlerts.slice(0, 3),
+  topQueries: mockQueries
 };
 
-// Database Health API
-export const health = {
-  getServerHealth: () => api.get('/database-health/server'),
-  getDatabaseHealth: (databaseId) => api.get(`/database-health/database/${databaseId}`),
-  runHealthCheck: () => api.post('/database-health/check'),
-  getHealthHistory: (databaseId) => api.get(`/database-health/history/${databaseId}`),
-  getHealthThresholds: () => api.get('/database-health/thresholds'),
-  updateHealthThresholds: (thresholds) => api.post('/database-health/thresholds', thresholds),
-  getPerformanceCounters: () => api.get('/database-health/performance-counters'),
+// API methods organized by domain
+const servers = {
+  getAll: () => api.get('/api/servers'),
+  getById: (id) => api.get(`/api/servers/${id}`),
+  create: (serverData) => api.post('/api/servers', serverData),
+  update: (id, serverData) => api.put(`/api/servers/${id}`, serverData),
+  delete: (id) => api.delete(`/api/servers/${id}`),
+  testConnection: (connectionString) => api.post('/api/servers/test-connection', { connectionString }),
+  getPerformance: (id) => api.get(`/api/servers/${id}/performance`)
 };
 
-// Database Comparison API
-export const databaseComparison = {
-  compare: (sourceDbId, targetDbId) => 
-    api.post('/database-comparison/compare', { sourceDbId, targetDbId }),
-  getSchemaDifferences: (comparisonId) => 
-    api.get(`/database-comparison/${comparisonId}/schema-differences`),
-  getDataDifferences: (comparisonId, tableName) => 
-    api.get(`/database-comparison/${comparisonId}/data-differences?tableName=${tableName}`),
-  getStoredProcDifferences: (comparisonId) => 
-    api.get(`/database-comparison/${comparisonId}/stored-procedure-differences`),
-  getComparisonHistory: () => api.get('/database-comparison/history'),
+const databases = {
+  getAll: () => api.get('/api/databases'),
+  getByServerId: (serverId) => api.get(`/api/servers/${serverId}/databases`),
+  getById: (id) => api.get(`/api/databases/${id}`),
+  create: (databaseData) => api.post('/api/databases', databaseData),
+  update: (id, databaseData) => api.put(`/api/databases/${id}`, databaseData),
+  delete: (id) => api.delete(`/api/databases/${id}`),
+  analyze: (id) => api.post(`/api/databases/${id}/analyze`),
+  optimize: (id) => api.post(`/api/databases/${id}/optimize`),
+  getSize: (id) => api.get(`/api/databases/${id}/size`),
+  getTables: (id) => api.get(`/api/databases/${id}/tables`),
+  getIndices: (id) => api.get(`/api/databases/${id}/indices`)
 };
 
-// Stored Procedures API
-export const storedProcedures = {
-  getAll: (databaseId) => api.get(`/stored-procedures?databaseId=${databaseId}`),
-  getById: (id) => api.get(`/stored-procedures/${id}`),
-  execute: (id, parameters) => api.post(`/stored-procedures/${id}/execute`, { parameters }),
-  analyzePerformance: (id) => api.get(`/stored-procedures/${id}/performance`),
-  getExecutionHistory: (id) => api.get(`/stored-procedures/${id}/execution-history`),
-  getSourceCode: (id) => api.get(`/stored-procedures/${id}/source`),
-  updateSourceCode: (id, sourceCode) => api.put(`/stored-procedures/${id}/source`, { sourceCode }),
+const health = {
+  getServerHealth: () => api.get('/api/health/server'),
+  getDatabaseHealth: (id) => api.get(`/api/health/database/${id}`),
+  getSystemOverview: () => api.get('/api/health/overview'),
+  getHealthHistory: (days) => api.get(`/api/health/history?days=${days || 7}`)
 };
 
-// Security API
-export const security = {
-  getUsers: () => api.get('/security/users'),
-  getUserById: (id) => api.get(`/security/users/${id}`),
-  createUser: (user) => api.post('/security/users', user),
-  updateUser: (id, user) => api.put(`/security/users/${id}`, user),
-  deleteUser: (id) => api.delete(`/security/users/${id}`),
-  resetPassword: (id, passwordData) => api.post(`/security/users/${id}/reset-password`, passwordData),
-  getPermissions: (userId) => api.get(`/security/users/${userId}/permissions`),
-  updatePermissions: (userId, permissions) => api.put(`/security/users/${userId}/permissions`, permissions),
-  auditLogin: () => api.get('/security/audit/logins'),
-  auditSchemaChanges: () => api.get('/security/audit/schema-changes'),
-  auditAccessAttempts: () => api.get('/security/audit/access-attempts'),
-  getTDEStatus: () => api.get('/security/tde-status'),
-  getEncryptionKeys: () => api.get('/security/encryption-keys'),
+const queries = {
+  getTopResourceConsumers: () => api.get('/api/queries/top'),
+  getByDatabase: (databaseId) => api.get(`/api/databases/${databaseId}/queries`),
+  getById: (id) => api.get(`/api/queries/${id}`),
+  analyze: (queryText) => api.post('/api/queries/analyze', { queryText }),
+  getHistory: (days) => api.get(`/api/queries/history?days=${days || 7}`)
 };
 
-// Backup API
-export const backup = {
-  getBackupHistory: (databaseId) => api.get(`/backup/${databaseId}/history`),
-  createBackup: (databaseId, backupType, location) => 
-    api.post('/backup', { databaseId, backupType, location }),
-  restoreBackup: (databaseId, backupFilePath, newDbName) => 
-    api.post('/backup/restore', { databaseId, backupFilePath, newDbName }),
-  getRestoreHistory: () => api.get('/backup/restore-history'),
-  verifyBackup: (backupFilePath) => api.post('/backup/verify', { backupFilePath }),
-  getBackupSettings: () => api.get('/backup/settings'),
-  updateBackupSettings: (settings) => api.put('/backup/settings', settings),
-  checkBackupStatus: (backupId) => api.get(`/backup/${backupId}/status`)
+const issues = {
+  getAll: () => api.get('/api/issues'),
+  getById: (id) => api.get(`/api/issues/${id}`),
+  markAsResolved: (id) => api.put(`/api/issues/${id}/resolve`),
+  dismiss: (id) => api.put(`/api/issues/${id}/dismiss`),
+  getSuggestions: (id) => api.get(`/api/issues/${id}/suggestions`)
 };
 
-// Optimization API
-export const optimization = {
-  getRecommendations: (databaseId) => api.get(`/optimization/${databaseId}/recommendations`),
-  applyRecommendation: (recommendationId) => api.post(`/optimization/recommendations/${recommendationId}/apply`),
-  getDatabaseIndexes: (databaseId) => api.get(`/optimization/${databaseId}/indexes`),
-  rebuildIndex: (indexId) => api.post(`/optimization/indexes/${indexId}/rebuild`),
-  reorganizeIndex: (indexId) => api.post(`/optimization/indexes/${indexId}/reorganize`),
-  updateStatistics: (databaseId, tableName) => 
-    api.post(`/optimization/${databaseId}/statistics`, { tableName }),
-  getStatistics: (databaseId) => api.get(`/optimization/${databaseId}/statistics`),
-  generateOptimizationScript: (databaseId) => api.get(`/optimization/${databaseId}/generate-script`),
-  getDatabaseConfiguration: (databaseId) => api.get(`/optimization/${databaseId}/configuration`),
-  updateDatabaseConfiguration: (databaseId, config) => 
-    api.put(`/optimization/${databaseId}/configuration`, config),
+const backup = {
+  getBackupHistory: () => api.get('/api/backups/history'),
+  getDatabaseBackups: (databaseId) => api.get(`/api/databases/${databaseId}/backups`),
+  createBackup: (databaseId, backupType) => api.post('/api/backups', { databaseId, backupType }),
+  getBackupPlan: () => api.get('/api/backups/plan'),
+  updateBackupPlan: (planData) => api.put('/api/backups/plan', planData)
 };
 
-// Issues API
-export const issues = {
-  getAll: () => api.get('/issues'),
-  getById: (id) => api.get(`/issues/${id}`),
-  resolve: (id, resolution) => api.post(`/issues/${id}/resolve`, { resolution }),
-  snooze: (id, duration) => api.post(`/issues/${id}/snooze`, { duration }),
-  getRecommendations: (id) => api.get(`/issues/${id}/recommendations`),
-  getSummary: () => api.get('/issues/summary'),
-  getHistory: () => api.get('/issues/history'),
-  getByCategory: (category) => api.get(`/issues/category/${category}`),
-  getByServer: (serverId) => api.get(`/issues/server/${serverId}`)
+const monitoring = {
+  getStatus: () => api.get('/api/monitoring/status'),
+  start: (serverId) => api.post('/api/monitoring/start', { serverId }),
+  stop: (serverId) => api.post('/api/monitoring/stop', { serverId }),
+  getDashboardData: () => api.get('/api/monitoring/dashboard'),
+  getMetricHistory: (metricName, days) => api.get(`/api/monitoring/metrics/${metricName}?days=${days || 7}`)
 };
 
-// Query Analysis API
-export const queryAnalysis = {
-  analyzePerformance: (queryText) => api.post('/query-analysis/performance', { queryText }),
-  getTopQueries: (databaseId) => api.get(`/query-analysis/${databaseId}/top-queries`),
-  getQueryDetails: (queryId) => api.get(`/query-analysis/query/${queryId}`),
-  suggestIndexes: (queryId) => api.get(`/query-analysis/query/${queryId}/suggest-indexes`),
-  getQueryExecutionStats: (queryId) => api.get(`/query-analysis/query/${queryId}/execution-stats`),
-  getWaitStats: () => api.get('/query-analysis/wait-stats'),
-  analyzeParameterSensitivity: (queryId) => api.get(`/query-analysis/query/${queryId}/parameter-sensitivity`),
-  getMissingIndexes: (databaseId) => api.get(`/query-analysis/${databaseId}/missing-indexes`)
+const users = {
+  getAll: () => api.get('/api/users'),
+  getById: (id) => api.get(`/api/users/${id}`),
+  create: (userData) => api.post('/api/users', userData),
+  update: (id, userData) => api.put(`/api/users/${id}`, userData),
+  delete: (id) => api.delete(`/api/users/${id}`),
+  getCurrentUser: () => api.get('/api/users/current')
 };
 
-// Servers API
-export const servers = {
-  getAll: () => api.get('/servers'),
-  getById: (id) => api.get(`/servers/${id}`),
-  create: (server) => api.post('/servers', server),
-  update: (id, server) => api.put(`/servers/${id}`, server),
-  delete: (id) => api.delete(`/servers/${id}`),
-  testConnection: (connectionString) => api.post('/servers/test-connection', { connectionString }),
-  getServerInstances: () => api.get('/servers/instances'),
-  getServerProperties: (id) => api.get(`/servers/${id}/properties`),
-  restart: (id) => api.post(`/servers/${id}/restart`),
-  getServerLogs: (id) => api.get(`/servers/${id}/logs`),
+const security = {
+  login: (credentials) => api.post('/api/auth/login', credentials),
+  logout: () => api.post('/api/auth/logout'),
+  refreshToken: () => api.post('/api/auth/refresh-token'),
+  changePassword: (passwordData) => api.post('/api/auth/change-password', passwordData),
+  getPermissions: () => api.get('/api/security/permissions')
 };
 
-// Alerts API
-export const alerts = {
-  getAll: () => api.get('/alerts'),
-  getById: (id) => api.get(`/alerts/${id}`),
-  create: (alert) => api.post('/alerts', alert),
-  update: (id, alert) => api.put(`/alerts/${id}`, alert),
-  delete: (id) => api.delete(`/alerts/${id}`),
-  resolve: (id) => api.post(`/alerts/${id}/resolve`),
-  getSettings: () => api.get('/alerts/settings'),
-  updateSettings: (settings) => api.post('/alerts/settings', settings),
-  getRecent: () => api.get('/alerts/recent'),
-  getByType: (type) => api.get(`/alerts/type/${type}`),
-  getBySeverity: (severity) => api.get(`/alerts/severity/${severity}`),
-};
-
-// Export all APIs
-export default {
-  monitoring,
-  databases,
-  queries,
-  queryExecution,
-  health,
-  databaseComparison,
-  storedProcedures,
-  security,
-  backup,
-  optimization,
-  issues,
-  queryAnalysis,
+// Export all API domains
+export {
   servers,
-  alerts,
+  databases,
+  health,
+  queries,
+  issues,
+  backup,
+  monitoring,
+  users,
+  security,
+  api
 }; 

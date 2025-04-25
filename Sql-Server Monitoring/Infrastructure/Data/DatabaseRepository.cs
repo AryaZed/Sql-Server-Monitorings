@@ -42,22 +42,23 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
 
             // Get database properties
             using (var command = new SqlCommand(
-                $@"SELECT 
+                @"SELECT 
                     d.create_date,
                     d.compatibility_level,
                     d.recovery_model_desc,
                     d.is_encrypted,
-                    (SELECT SUM(CAST(size as BIGINT) * 8 / 1024) FROM sys.master_files WHERE database_id = DB_ID('{databaseName}')) AS size_mb,
-                    (SELECT MAX(backup_finish_date) FROM msdb.dbo.backupset WHERE database_name = '{databaseName}' AND type = 'D') AS last_backup_date
+                    (SELECT SUM(CAST(size as BIGINT) * 8 / 1024) FROM sys.master_files WHERE database_id = DB_ID(@dbName)) AS size_mb,
+                    (SELECT MAX(backup_finish_date) FROM msdb.dbo.backupset WHERE database_name = @dbName AND type = 'D') AS last_backup_date
                 FROM sys.databases d
-                WHERE d.name = '{databaseName}'",
+                WHERE d.name = @dbName",
                 connection))
             {
+                command.Parameters.AddWithValue("@dbName", databaseName);
                 using var reader = await command.ExecuteReaderAsync();
                 if (await reader.ReadAsync())
                 {
                     database.CreatedDate = reader.GetDateTime(0);
-                    database.CompatibilityLevel = (int)reader.GetInt32(1);
+                    database.CompatibilityLevel = reader.GetInt32(1);
                     database.RecoveryModel = Enum.Parse<RecoveryModel>(reader.GetString(2), true);
                     database.IsEncrypted = reader.GetBoolean(3);
                     database.SizeInMB = reader.GetInt64(4);
@@ -67,7 +68,7 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
 
             // Get database files
             using (var command = new SqlCommand(
-                $@"SELECT 
+                @"SELECT 
                     f.name,
                     f.physical_name,
                     f.size * 8 / 1024 AS size_mb,
@@ -77,9 +78,10 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
                     f.type_desc,
                     FILEPROPERTY(f.name, 'SpaceUsed') * 8 / 1024 AS used_space_mb
                 FROM sys.master_files f
-                WHERE database_id = DB_ID('{databaseName}')",
+                WHERE database_id = DB_ID(@dbName)",
                 connection))
             {
+                command.Parameters.AddWithValue("@dbName", databaseName);
                 using var reader = await command.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
                 {
@@ -118,7 +120,7 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
             await connection.OpenAsync();
 
             using var command = new SqlCommand(
-                $@"USE [{databaseName}];
+                @"USE @dbName;
                    SELECT 
                        s.name AS schema_name,
                        t.name AS table_name,
@@ -141,6 +143,9 @@ namespace Sql_Server_Monitoring.Infrastructure.Data
                    GROUP BY s.name, t.name, t.object_id, p.rows
                    ORDER BY s.name, t.name",
                 connection);
+                
+            // Update the USE statement properly as it can't be parameterized directly
+            command.CommandText = command.CommandText.Replace("@dbName", $"[{databaseName}]");
 
             using var reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())

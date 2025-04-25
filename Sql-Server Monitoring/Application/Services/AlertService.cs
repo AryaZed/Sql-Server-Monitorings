@@ -101,6 +101,146 @@ namespace Sql_Server_Monitoring.Application.Services
             }
         }
 
+        public async Task<bool> SetupAlertsAsync(string connectionString)
+        {
+            try
+            {
+                _logger.LogInformation("Setting up default alerts");
+                
+                // Define default alert settings
+                var defaultAlerts = new List<AlertSetting>
+                {
+                    new AlertSetting 
+                    { 
+                        Name = "High CPU Alert", 
+                        Type = AlertType.HighCpu, 
+                        IsEnabled = true,
+                        MinimumSeverity = IssueSeverity.Medium,
+                        Notifications = new List<AlertNotification>
+                        {
+                            new AlertNotification { Type = NotificationType.Email, Target = "admin@example.com", IncludeDetails = true }
+                        }
+                    },
+                    new AlertSetting 
+                    { 
+                        Name = "Low Memory Alert", 
+                        Type = AlertType.LowMemory, 
+                        IsEnabled = true,
+                        MinimumSeverity = IssueSeverity.Medium,
+                        Notifications = new List<AlertNotification>
+                        {
+                            new AlertNotification { Type = NotificationType.Email, Target = "admin@example.com", IncludeDetails = true }
+                        }
+                    },
+                    new AlertSetting 
+                    { 
+                        Name = "Blocking Alert", 
+                        Type = AlertType.Blocking, 
+                        IsEnabled = true,
+                        MinimumSeverity = IssueSeverity.Medium,
+                        Notifications = new List<AlertNotification>
+                        {
+                            new AlertNotification { Type = NotificationType.Email, Target = "admin@example.com", IncludeDetails = true }
+                        }
+                    }
+                };
+                
+                // Get current settings
+                var settings = await _settingsRepository.GetMonitoringSettingsAsync();
+                
+                // Replace with default alerts (or combine with existing)
+                settings.Alerts = defaultAlerts;
+                
+                // Save settings
+                await _settingsRepository.SaveMonitoringSettingsAsync(settings);
+                
+                _logger.LogInformation("Default alerts set up successfully");
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting up default alerts");
+                return false;
+            }
+        }
+
+        public async Task<bool> EnableAlertAsync(AlertType alertType, bool enabled)
+        {
+            try
+            {
+                _logger.LogInformation($"{(enabled ? "Enabling" : "Disabling")} alert type: {alertType}");
+                
+                // Get current settings
+                var settings = await _settingsRepository.GetMonitoringSettingsAsync();
+                
+                // Find alert setting for this type
+                var alertSetting = settings.Alerts.Find(a => a.Type == alertType);
+                
+                if (alertSetting == null)
+                {
+                    _logger.LogWarning($"No alert setting found for type: {alertType}");
+                    return false;
+                }
+                
+                // Update enabled state
+                alertSetting.IsEnabled = enabled;
+                
+                // Save settings
+                await _settingsRepository.SaveMonitoringSettingsAsync(settings);
+                
+                _logger.LogInformation($"Alert type {alertType} {(enabled ? "enabled" : "disabled")} successfully");
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error {(enabled ? "enabling" : "disabling")} alert type: {alertType}");
+                return false;
+            }
+        }
+
+        public async Task<bool> TestAlertsAsync()
+        {
+            try
+            {
+                _logger.LogInformation("Testing alert notifications");
+                
+                // Get alert settings
+                var settings = await _settingsRepository.GetMonitoringSettingsAsync();
+                
+                // Create test issue
+                var testIssue = new DbIssue
+                {
+                    Type = IssueType.Performance,
+                    Severity = IssueSeverity.Low,
+                    Message = "This is a test alert notification",
+                    AffectedObject = "TestObject",
+                    RecommendedAction = "No action needed, this is just a test",
+                    DatabaseName = "TestDatabase",
+                    DetectionTime = DateTime.Now
+                };
+                
+                // Test each enabled alert type
+                foreach (var alert in settings.Alerts.Where(a => a.IsEnabled))
+                {
+                    foreach (var notification in alert.Notifications)
+                    {
+                        await SendNotificationAsync(notification, "Server=TestServer", "TestDatabase", testIssue);
+                    }
+                }
+                
+                _logger.LogInformation("Alert notifications test completed successfully");
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error testing alert notifications");
+                return false;
+            }
+        }
+
         public async Task<AlertNotification> CreateAlertAsync(
             string connectionString,
             string databaseName,
@@ -113,20 +253,18 @@ namespace Sql_Server_Monitoring.Application.Services
             {
                 var alertNotification = new AlertNotification
                 {
-                    Type = alertType,
-                    Message = message,
-                    RecommendedAction = recommendedAction,
-                    Severity = severity,
-                    Timestamp = DateTime.Now,
-                    DatabaseName = databaseName
+                    Type = NotificationType.Email, // Default to email, but should come from settings
+                    Target = "admin@example.com", // Default target, should come from settings
+                    IncludeDetails = true
                 };
 
                 // Store in repository
                 await _alertRepository.AddAlertAsync(alertNotification);
 
-                // Send notifications based on settings
-                var notificationSettings = await _settingsRepository.GetAlertSettingsAsync();
-                var shouldNotify = notificationSettings.Any(s => s.AlertType == alertType && s.Enabled);
+                // Get alert settings to check if notifications should be sent
+                var settings = await _settingsRepository.GetMonitoringSettingsAsync();
+                var alertSetting = settings.Alerts.FirstOrDefault(a => a.Type == alertType && a.IsEnabled);
+                var shouldNotify = alertSetting != null;
 
                 if (shouldNotify)
                 {
@@ -153,11 +291,11 @@ namespace Sql_Server_Monitoring.Application.Services
                 IssueType.Performance when issueType.ToString().Contains("Query") => AlertType.LongRunningQuery,
                 IssueType.Performance when issueType.ToString().Contains("Block") => AlertType.Blocking,
                 IssueType.Performance when issueType.ToString().Contains("Deadlock") => AlertType.Deadlock,
-                IssueType.Configuration => AlertType.ConfigurationIssue,
-                IssueType.Security => AlertType.SecurityIssue,
+                IssueType.Configuration => AlertType.TraceFlag, // Using an existing value
+                IssueType.Security => AlertType.SecurityVulnerability,
                 IssueType.Backup => AlertType.BackupFailure,
-                IssueType.Capacity => AlertType.DiskSpace,
-                _ => AlertType.ConfigurationIssue
+                IssueType.Capacity => AlertType.LowDiskSpace,
+                _ => AlertType.CustomCheck
             };
         }
 
@@ -230,6 +368,13 @@ namespace Sql_Server_Monitoring.Application.Services
         {
             // In a real implementation, this would call a webhook
             _logger.LogInformation($"Would call webhook {webhookUrl} with subject: {subject}");
+            return Task.CompletedTask;
+        }
+        
+        private Task SendNotificationsAsync(AlertNotification notification)
+        {
+            // In a real implementation, this would send notifications based on the notification type
+            _logger.LogInformation($"Would send notification via {notification.Type} to {notification.Target}");
             return Task.CompletedTask;
         }
         #endregion

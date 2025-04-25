@@ -162,7 +162,7 @@ namespace Sql_Server_Monitoring.Application.Services
                 IssueType.Configuration => ScriptType.Configuration,
                 IssueType.Security => ScriptType.Security,
                 IssueType.Backup => ScriptType.Maintenance,
-                IssueType.Integrity => ScriptType.Maintenance,
+                IssueType.Corruption => ScriptType.Maintenance,
                 IssueType.Capacity => ScriptType.Maintenance,
                 _ => ScriptType.Maintenance
             };

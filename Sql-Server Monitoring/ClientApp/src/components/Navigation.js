@@ -30,7 +30,7 @@ import {
   Logout as LogoutIcon,
   MonitorHeartOutlined as MonitoringIcon,
   Speed as SpeedIcon,
-  Database as DatabaseIcon,
+  Storage as DatabaseIcon,
   Code as CodeIcon,
   Warning as WarningIcon,
   Backup as BackupIcon,

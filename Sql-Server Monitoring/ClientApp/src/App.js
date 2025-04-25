@@ -13,6 +13,10 @@ import NotFound from './pages/NotFound';
 import AgentJobs from './pages/AgentJobs';
 import DbccChecks from './pages/DbccChecks';
 import IdentityColumns from './pages/IdentityColumns';
+import DatabaseList from './pages/DatabaseList';
+import DatabaseDetails from './pages/DatabaseDetails';
+import QueryAnalyzer from './pages/QueryAnalyzer';
+import Monitoring from './pages/Monitoring';
 import { useConnection } from './context/ConnectionContext';
 import signalRService from './services/signalrService';
 
@@ -61,10 +65,18 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/monitoring" element={<MonitoringDashboard />} />
             <Route path="/servers" element={<Servers />} />
+            <Route path="/databases" element={<DatabaseList />} />
+            <Route path="/databases/:id" element={<DatabaseDetails />} />
             <Route path="/performance" element={<Performance />} />
+            <Route path="/queries" element={<QueryAnalyzer />} />
+            <Route path="/issues" element={<Monitoring />} />
+            <Route path="/backups" element={<Monitoring />} />
             <Route path="/agent-jobs" element={<AgentJobs />} />
             <Route path="/dbcc-checks" element={<DbccChecks />} />
             <Route path="/identity-columns" element={<IdentityColumns />} />
+            <Route path="/availability-groups" element={<NotFound />} />
+            <Route path="/log-shipping" element={<NotFound />} />
+            <Route path="/mirroring" element={<NotFound />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/users" element={<UserManagement />} />
